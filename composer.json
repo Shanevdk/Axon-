@@ -77,6 +77,9 @@
             "@types:check",
             "@php artisan test"
         ],
+        "test:pgsql": [
+            "@php artisan test -c phpunit.pgsql.xml"
+        ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
             "@php artisan package:discover --ansi"
