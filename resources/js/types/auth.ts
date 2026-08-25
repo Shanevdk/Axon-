@@ -10,8 +10,15 @@ export type User = {
     [key: string]: unknown;
 };
 
+export type Organization = {
+    name: string;
+    is_head: boolean;
+};
+
 export type Auth = {
     user: User;
+    /** Null until the user creates or joins an organization. */
+    organization: Organization | null;
 };
 
 export type Passkey = {

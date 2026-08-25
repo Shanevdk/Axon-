@@ -15,6 +15,12 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Laravel Cloud terminates TLS at its load balancer and forwards over
+        // plain HTTP. Without this the app believes it is on http://, and the
+        // invitation links it mails out would be built on the wrong scheme.
+        // The balancer's addresses are not fixed, hence the wildcard.
+        $middleware->trustProxies(at: '*');
+
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
 
         $middleware->web(append: [

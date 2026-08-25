@@ -40,6 +40,11 @@ class HandleInertiaRequests extends Middleware
             'name' => config('app.name'),
             'auth' => [
                 'user' => $request->user(),
+                // The sidebar labels itself with the studio name.
+                'organization' => $request->user()?->organization === null ? null : [
+                    'name' => $request->user()->organization->name,
+                    'is_head' => $request->user()->isOrganizationHead(),
+                ],
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];

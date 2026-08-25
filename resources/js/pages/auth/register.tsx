@@ -11,12 +11,31 @@ import { store } from '@/routes/register';
 
 type Props = {
     passwordRules: string;
+    /** Present when the visitor followed an invitation link from their inbox. */
+    invitation?: {
+        token: string;
+        email: string;
+        organization: string;
+    } | null;
 };
 
-export default function Register({ passwordRules }: Props) {
+export default function Register({ passwordRules, invitation }: Props) {
     return (
         <>
             <Head title="Register" />
+
+            {invitation && (
+                <div className="mb-6 rounded-md border border-sand/40 bg-accent/40 p-4 text-sm">
+                    <p className="font-medium">
+                        You have been invited to {invitation.organization}
+                    </p>
+                    <p className="mt-1 text-muted-foreground">
+                        Create your account and you will join the studio
+                        straight away.
+                    </p>
+                </div>
+            )}
+
             <Form
                 {...store.form()}
                 resetOnSuccess={['password', 'password_confirmation']}
@@ -54,6 +73,7 @@ export default function Register({ passwordRules }: Props) {
                                     autoComplete="email"
                                     name="email"
                                     placeholder="email@example.com"
+                                    defaultValue={invitation?.email}
                                 />
                                 <InputError message={errors.email} />
                             </div>

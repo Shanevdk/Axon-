@@ -1,7 +1,6 @@
-import { Link } from '@inertiajs/react';
-import { BookOpen, FolderGit2, LayoutGrid } from 'lucide-react';
+import { Link, usePage } from '@inertiajs/react';
+import { Box, Building2, LayoutGrid, Sparkles, Users } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
-import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
 import {
@@ -13,31 +12,44 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { dashboard } from '@/routes';
+import { assistant, dashboard } from '@/routes';
+import { index as clients } from '@/routes/clients';
+import { show as organization } from '@/routes/organization';
+import { index as projects } from '@/routes/projects';
 import type { NavItem } from '@/types';
 
-const mainNavItems: NavItem[] = [
-    {
-        title: 'Dashboard',
-        href: dashboard(),
-        icon: LayoutGrid,
-    },
-];
-
-const footerNavItems: NavItem[] = [
-    {
-        title: 'Repository',
-        href: 'https://github.com/laravel/react-starter-kit',
-        icon: FolderGit2,
-    },
-    {
-        title: 'Documentation',
-        href: 'https://laravel.com/docs/starter-kits#react',
-        icon: BookOpen,
-    },
-];
-
 export function AppSidebar() {
+    const { auth } = usePage().props;
+
+    const mainNavItems: NavItem[] = [
+        {
+            title: 'Studio',
+            href: dashboard(),
+            icon: LayoutGrid,
+        },
+        {
+            title: 'Projects',
+            href: projects(),
+            icon: Box,
+        },
+        {
+            title: 'Clients',
+            href: clients(),
+            icon: Users,
+        },
+        {
+            title: 'Assistant',
+            href: assistant(),
+            icon: Sparkles,
+        },
+        {
+            // The team's own name once they have one.
+            title: auth.organization?.name ?? 'Organization',
+            href: organization(),
+            icon: Building2,
+        },
+    ];
+
     return (
         <Sidebar collapsible="icon" variant="inset">
             <SidebarHeader>
@@ -57,7 +69,6 @@ export function AppSidebar() {
             </SidebarContent>
 
             <SidebarFooter>
-                <NavFooter items={footerNavItems} className="mt-auto" />
                 <NavUser />
             </SidebarFooter>
         </Sidebar>

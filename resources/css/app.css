@@ -7,15 +7,32 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Axon brand palette.
+ *
+ * ink    #242424 — body copy and headings
+ * sand   #c2ab92 — primary brand accent
+ * ember  #f68b21 — link / call-to-action accent
+ */
 @theme {
     --font-sans:
-        'Instrument Sans', ui-sans-serif, system-ui, sans-serif,
-        'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
-        'Noto Color Emoji';
+        'Karla', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji',
+        'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-mono: ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace;
 
     --radius-lg: var(--radius);
     --radius-md: calc(var(--radius) - 2px);
     --radius-sm: calc(var(--radius) - 4px);
+
+    --color-ink: #242424;
+    --color-ink-soft: #3e3e3e;
+    --color-ink-muted: #4e4e4e;
+    --color-sand: #c2ab92;
+    --color-sand-light: #d8cabb;
+    --color-sand-pale: #f0e9e1;
+    --color-ember: #f68b21;
+    --color-paper: #ffffff;
+    --color-paper-warm: #f7f5f2;
 
     --color-background: var(--background);
     --color-foreground: var(--foreground);
@@ -59,77 +76,85 @@
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-ring: var(--sidebar-ring);
+
+    /* Editor chrome — always dark so drawings read as lit paper on a desk. */
+    --color-chrome: #262523;
+    --color-chrome-raised: #302e2b;
+    --color-chrome-sunken: #1c1b1a;
+    --color-chrome-border: #3b3835;
+    --color-chrome-fg: #e8e3dc;
+    --color-chrome-muted: #9a9186;
 }
 
 :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --destructive-foreground: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.87 0 0);
-    --chart-1: oklch(0.646 0.222 41.116);
-    --chart-2: oklch(0.6 0.118 184.704);
-    --chart-3: oklch(0.398 0.07 227.392);
-    --chart-4: oklch(0.828 0.189 84.429);
-    --chart-5: oklch(0.769 0.188 70.08);
-    --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.87 0 0);
+    --background: #ffffff;
+    --foreground: #242424;
+    --card: #ffffff;
+    --card-foreground: #242424;
+    --popover: #ffffff;
+    --popover-foreground: #242424;
+    --primary: #242424;
+    --primary-foreground: #ffffff;
+    --secondary: #f4f2ef;
+    --secondary-foreground: #242424;
+    --muted: #f4f2ef;
+    --muted-foreground: #6f665c;
+    --accent: #f0e9e1;
+    --accent-foreground: #242424;
+    --destructive: #b4321f;
+    --destructive-foreground: #b4321f;
+    --border: #e7e1da;
+    --input: #e7e1da;
+    --ring: #c2ab92;
+    --chart-1: #c2ab92;
+    --chart-2: #f68b21;
+    --chart-3: #4e4e4e;
+    --chart-4: #82c0c7;
+    --chart-5: #bcc8c9;
+    --radius: 0.5rem;
+    --sidebar: #242424;
+    --sidebar-foreground: #e8e3dc;
+    --sidebar-primary: #c2ab92;
+    --sidebar-primary-foreground: #242424;
+    --sidebar-accent: #333130;
+    --sidebar-accent-foreground: #f0e9e1;
+    --sidebar-border: #3a3735;
+    --sidebar-ring: #c2ab92;
 }
 
 .dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.145 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.145 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.985 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.396 0.141 25.723);
-    --destructive-foreground: oklch(0.637 0.237 25.331);
-    --border: oklch(0.269 0 0);
-    --input: oklch(0.269 0 0);
-    --ring: oklch(0.439 0 0);
-    --chart-1: oklch(0.488 0.243 264.376);
-    --chart-2: oklch(0.696 0.17 162.48);
-    --chart-3: oklch(0.769 0.188 70.08);
-    --chart-4: oklch(0.627 0.265 303.9);
-    --chart-5: oklch(0.645 0.246 16.439);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.985 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(0.269 0 0);
-    --sidebar-ring: oklch(0.439 0 0);
+    --background: #1a1a19;
+    --foreground: #ede8e2;
+    --card: #232322;
+    --card-foreground: #ede8e2;
+    --popover: #232322;
+    --popover-foreground: #ede8e2;
+    --primary: #c2ab92;
+    --primary-foreground: #242424;
+    --secondary: #2d2c2a;
+    --secondary-foreground: #ede8e2;
+    --muted: #2d2c2a;
+    --muted-foreground: #9a9186;
+    --accent: #33302d;
+    --accent-foreground: #f0e9e1;
+    --destructive: #7d2517;
+    --destructive-foreground: #e2603f;
+    --border: #35332f;
+    --input: #35332f;
+    --ring: #c2ab92;
+    --chart-1: #c2ab92;
+    --chart-2: #f68b21;
+    --chart-3: #bcc8c9;
+    --chart-4: #82c0c7;
+    --chart-5: #9a9186;
+    --sidebar: #141413;
+    --sidebar-foreground: #e8e3dc;
+    --sidebar-primary: #c2ab92;
+    --sidebar-primary-foreground: #242424;
+    --sidebar-accent: #262523;
+    --sidebar-accent-foreground: #f0e9e1;
+    --sidebar-border: #2f2d2a;
+    --sidebar-ring: #c2ab92;
 }
 
 @layer base {
@@ -140,4 +165,23 @@
     body {
         @apply bg-background text-foreground;
     }
+}
+
+@layer components {
+    /*
+     * Headings are set in wide, uppercase Karla — mirrored here so the
+     * marketing page and the software read as one brand.
+     */
+    .ax-eyebrow {
+        @apply text-xs font-semibold tracking-[0.22em] uppercase;
+    }
+
+    .ax-rule {
+        @apply h-px w-12 bg-sand;
+    }
+}
+
+@utility scrollbar-chrome {
+    scrollbar-width: thin;
+    scrollbar-color: #4a4744 transparent;
 }
