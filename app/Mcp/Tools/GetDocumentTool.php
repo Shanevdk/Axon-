@@ -35,6 +35,12 @@ class GetDocumentTool extends Tool
 
         return Response::structured([
             'project' => ['id' => $project->id, 'name' => $project->name],
+            // Honest about which it is: once a drawing lives on a machine the
+            // server holds one level of it and nothing more.
+            'is_preview' => $project->has_local_model,
+            'note' => $project->has_local_model
+                ? 'This is a preview of one level. The full model is on the computer that drew it.'
+                : 'This is the whole model.',
             'document' => $this->documentFor($project),
         ]);
     }

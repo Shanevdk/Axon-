@@ -5,8 +5,9 @@ Before planning or editing, find the row whose globs match the file's path and r
 | Applies to | Rule file |
 | --- | --- |
 | app/Actions/Assistant/** | .ai/rules/assistant.md |
-| resources/js/lib/cad/**, resources/js/lib/cad/brief.ts | .ai/rules/cad.md |
+| resources/js/lib/cad/**, resources/js/lib/cad/brief.ts, resources/js/lib/cad/vault.ts | .ai/rules/cad.md |
 | resources/js/components/app-logo*.tsx | .ai/rules/components.md |
+| config/database.php | .ai/rules/config.md |
 | resources/js/lib/cad/exchange/** | .ai/rules/exchange.md |
 | app/Mcp/** | .ai/rules/mcp.md |
 | app/Models/Project.php, app/Models/User.php, app/Models/OrganizationInvitation.php | .ai/rules/models.md |

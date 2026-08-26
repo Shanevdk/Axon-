@@ -1,12 +1,14 @@
 import { Head, Link, router } from '@inertiajs/react';
-import { Plus, Trash2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { Download, HardDrive, Plus, Trash2, Upload } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { NewProjectDialog } from '@/components/cad/new-project-dialog';
 import { buildPlanModel, PlanThumbnail } from '@/components/cad/plan-thumbnail';
 import type { PlanModel } from '@/components/cad/plan-thumbnail';
 import { Button } from '@/components/ui/button';
+import { downloadDrawing, parseDrawing } from '@/lib/cad/transfer';
 import type { CadDocument, Units } from '@/lib/cad/types';
 import { formatArea } from '@/lib/cad/units';
+import { openVault } from '@/lib/cad/vault';
 import { cn } from '@/lib/utils';
 import { destroy, index, show } from '@/routes/projects';
 
@@ -36,6 +38,30 @@ export default function ProjectsIndex({
     projects: ProjectRow[];
 }) {
     const [creating, setCreating] = useState(false);
+
+    // Every project is listed, but only some are drawn on this machine. Null
+    // while the vault is still being read, so nothing flashes the wrong badge.
+    const [held, setHeld] = useState<Set<number> | null>(null);
+    const [rereads, setRereads] = useState(0);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        void openVault()
+            .then((vault) => vault.list())
+            .then((ids) => {
+                if (!cancelled) {
+                    setHeld(new Set(ids));
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [rereads]);
+
+    // Bumped after an import, to look at the vault again.
+    const refreshHeld = useCallback(() => setRereads((n) => n + 1), []);
 
     const plans = useMemo(
         () =>
@@ -82,6 +108,8 @@ export default function ProjectsIndex({
                                 key={project.id}
                                 project={project}
                                 plan={plans.get(project.id) ?? null}
+                                here={held?.has(project.id) ?? null}
+                                onChanged={refreshHeld}
                             />
                         ))}
                     </div>
@@ -96,9 +124,14 @@ export default function ProjectsIndex({
 function ProjectCard({
     project,
     plan,
+    here,
+    onChanged,
 }: {
     project: ProjectRow;
     plan: PlanModel | null;
+    /** Null while the vault is still being read. */
+    here: boolean | null;
+    onChanged: () => void;
 }) {
     const facts = [
         { label: 'Levels', value: String(project.summary.levels) },
@@ -160,6 +193,8 @@ function ProjectCard({
                 </div>
             </Link>
 
+            <Whereabouts project={project} here={here} onChanged={onChanged} />
+
             <button
                 type="button"
                 aria-label={`Delete ${project.name}`}
@@ -179,6 +214,130 @@ function ProjectCard({
             >
                 <Trash2 className="size-4" />
             </button>
+        </div>
+    );
+}
+
+/**
+ * Where this drawing actually is, and how to move it.
+ *
+ * The project row always comes from the server; the model does not. This
+ * strip is the difference between the two — it says whether the machine you
+ * are sitting at holds the drawing, and gives you the file either way.
+ */
+function Whereabouts({
+    project,
+    here,
+    onChanged,
+}: {
+    project: ProjectRow;
+    here: boolean | null;
+    onChanged: () => void;
+}) {
+    const [busy, setBusy] = useState(false);
+    const [failure, setFailure] = useState<string | null>(null);
+
+    async function send() {
+        setBusy(true);
+        setFailure(null);
+
+        try {
+            const vault = await openVault();
+            const held = await vault.read(project.id);
+
+            if (!held) {
+                setFailure('That drawing is no longer on this computer.');
+
+                return;
+            }
+
+            downloadDrawing(held.document, project.name);
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    async function take(file: File) {
+        setBusy(true);
+        setFailure(null);
+
+        try {
+            const drawing = parseDrawing(await file.text());
+            const vault = await openVault();
+
+            await vault.write(project.id, drawing, 0);
+            onChanged();
+        } catch (problem) {
+            setFailure(
+                problem instanceof Error
+                    ? problem.message
+                    : 'That file could not be read.',
+            );
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    return (
+        <div className="border-t border-border px-5 py-2.5">
+            <div className="flex items-center justify-between gap-2">
+                <span
+                    className={cn(
+                        'flex items-center gap-1.5 text-[0.65rem]',
+                        here === null && 'text-muted-foreground/60',
+                        here === true && 'text-muted-foreground',
+                        here === false && 'text-sand',
+                    )}
+                >
+                    <HardDrive className="size-3" />
+                    {here === null
+                        ? 'Checking…'
+                        : here
+                          ? 'On this computer'
+                          : 'Not on this computer'}
+                </span>
+
+                {here === true ? (
+                    <button
+                        type="button"
+                        onClick={send}
+                        disabled={busy}
+                        className="flex items-center gap-1 text-[0.65rem] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+                    >
+                        <Download className="size-3" />
+                        Download drawing
+                    </button>
+                ) : (
+                    here === false && (
+                        <label className="flex cursor-pointer items-center gap-1 text-[0.65rem] text-muted-foreground transition-colors hover:text-foreground">
+                            <input
+                                type="file"
+                                accept=".json,application/json"
+                                className="hidden"
+                                disabled={busy}
+                                onChange={(event) => {
+                                    const file = event.target.files?.[0];
+
+                                    if (file) {
+                                        void take(file);
+                                    }
+
+                                    // Let the same file be chosen twice.
+                                    event.target.value = '';
+                                }}
+                            />
+                            <Upload className="size-3" />
+                            Open a drawing file
+                        </label>
+                    )
+                )}
+            </div>
+
+            {failure && (
+                <p className="mt-1.5 text-[0.65rem] text-destructive">
+                    {failure}
+                </p>
+            )}
         </div>
     );
 }

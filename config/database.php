@@ -84,11 +84,59 @@ return [
             ]) : [],
         ],
 
-        'pgsql' => [
+        /*
+        | A managed Postgres cluster, reached through its pooler.
+        |
+        | Set DB_READ_HOST to a replica and reads fan out to it; leave it
+        | unset and this behaves as an ordinary single-host connection. The
+        | split is sticky, so a request that writes then reads — which is
+        | most of this application — reads back from the writer and never
+        | sees stale replication lag.
+        */
+        'pgsql' => array_merge([
             'driver' => 'pgsql',
             'url' => env('DB_URL'),
+            'database' => env('DB_DATABASE', 'laravel'),
+            'username' => env('DB_USERNAME', 'root'),
+            'password' => env('DB_PASSWORD', ''),
+            'charset' => env('DB_CHARSET', 'utf8'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'search_path' => 'public',
+            // Managed clusters refuse plaintext; the local default stays lax.
+            'sslmode' => env('DB_SSLMODE', 'prefer'),
+        ], env('DB_READ_HOST') ? [
+            'read' => [
+                'host' => array_map('trim', explode(',', (string) env('DB_READ_HOST'))),
+                'port' => env('DB_READ_PORT', env('DB_PORT', '5432')),
+            ],
+            'write' => [
+                'host' => [env('DB_HOST', '127.0.0.1')],
+                'port' => env('DB_PORT', '5432'),
+            ],
+            'sticky' => true,
+        ] : [
             'host' => env('DB_HOST', '127.0.0.1'),
             'port' => env('DB_PORT', '5432'),
+        ]),
+
+        /*
+        | The same cluster, reached directly rather than through the pooler.
+        |
+        | Schema changes need a session to themselves — a transaction pooler
+        | hands connections back mid-flight and advisory locks and prepared
+        | statements do not survive it. Deploys therefore migrate over this:
+        |
+        |     php artisan migrate --force --database=pgsql_direct
+        |
+        | With DB_DIRECT_URL unset it is simply the pooled connection again,
+        | which is correct for a single unpooled server.
+        */
+        'pgsql_direct' => [
+            'driver' => 'pgsql',
+            'url' => env('DB_DIRECT_URL', env('DB_URL')),
+            'host' => env('DB_DIRECT_HOST', env('DB_HOST', '127.0.0.1')),
+            'port' => env('DB_DIRECT_PORT', env('DB_PORT', '5432')),
             'database' => env('DB_DATABASE', 'laravel'),
             'username' => env('DB_USERNAME', 'root'),
             'password' => env('DB_PASSWORD', ''),

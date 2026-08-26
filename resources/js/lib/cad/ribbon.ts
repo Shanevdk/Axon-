@@ -6,6 +6,7 @@ import {
     BoxSelect,
     BrickWall,
     Camera,
+    HardDriveDownload,
     Columns3,
     Compass,
     Construction,
@@ -67,6 +68,7 @@ export type CommandId =
     | 'exportTypes'
     | 'export'
     | 'render'
+    | 'downloadDrawing'
     | 'hideElement'
     | 'isolateElement'
     | 'resetHideIsolate'
@@ -655,6 +657,14 @@ export const RIBBON_TABS: RibbonTab[] = [
                         hint: 'Write the model out as STEP, STL, OBJ, DXF or an Axon model file',
                     },
                     {
+                        id: 'download-drawing',
+                        label: 'Download Drawing',
+                        icon: HardDriveDownload,
+                        action: { kind: 'command', command: 'downloadDrawing' },
+                        size: 'small',
+                        hint: 'Save the whole model as a file, to carry it to another computer',
+                    },
+                    {
                         id: 'export-types',
                         label: 'Save Types',
                         icon: Save,
@@ -791,6 +801,7 @@ export const SHORTCUTS: Record<string, RibbonAction> = {
     pi: { kind: 'command', command: 'projectInfo' },
     ex: { kind: 'command', command: 'export' },
     re: { kind: 'command', command: 'render' },
+    dw: { kind: 'command', command: 'downloadDrawing' },
 };
 
 /**

@@ -5,6 +5,7 @@ namespace App\Mcp\Tools\Concerns;
 use App\Actions\Projects\BuildStarterDocument;
 use App\Models\Project;
 use Illuminate\Support\Str;
+use Laravel\Mcp\Response;
 
 /**
  * Shared plumbing for tools that read or write a project's model document.
@@ -15,6 +16,27 @@ use Illuminate\Support\Str;
  */
 trait MutatesDocuments
 {
+    /**
+     * Refuse to touch a project whose model lives on someone's machine.
+     *
+     * Once a drawing is local the server keeps only a one-level preview, and
+     * the editor overwrites that preview on its next save. Editing it here
+     * would look like it worked and then quietly vanish, so it is stopped.
+     */
+    protected function refuseIfAway(Project $project): ?Response
+    {
+        if (! $project->has_local_model) {
+            return null;
+        }
+
+        return Response::error(sprintf(
+            'The model for "%s" is held on the computer that drew it — the server keeps only a preview, '
+            .'so it cannot be edited from here. Open the project in Axon on that machine, or use '
+            .'Download drawing to move it.',
+            $project->name,
+        ));
+    }
+
     /**
      * @return array<string, mixed>
      */

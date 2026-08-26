@@ -11,6 +11,7 @@ import {
     withoutElements,
 } from '@/lib/cad/model';
 import type { WallGeometry } from '@/lib/cad/model';
+import { buildPreview, summarise } from '@/lib/cad/preview';
 import { fitCamera } from '@/lib/cad/render-3d';
 import type { CommandId, ToggleId } from '@/lib/cad/ribbon';
 import { computeRoomBoundaries } from '@/lib/cad/rooms';
@@ -30,6 +31,7 @@ import type {
     ToolId,
     ViewSettings,
 } from '@/lib/cad/types';
+import type { DrawingVault } from '@/lib/cad/vault';
 import {
     azimuthFor,
     browserGroups,
@@ -41,7 +43,17 @@ import {
     settingsFor,
 } from '@/lib/cad/views';
 
-const AUTOSAVE_DELAY = 1200;
+/**
+ * The drawing is written to this computer almost as fast as it changes — this
+ * is the save that matters, so it is deliberately close to instant.
+ */
+const LOCAL_SAVE_DELAY = 250;
+
+/**
+ * The server only receives a one-level preview for the projects page, so it
+ * can wait for a lull.
+ */
+const PUBLISH_DELAY = 1500;
 
 const DEFAULT_ORBIT: OrbitCamera = {
     azimuth: -Math.PI / 4,
@@ -54,7 +66,20 @@ export type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 export type CadEditor = ReturnType<typeof useCadEditor>;
 
-export function useCadEditor(initialDocument: CadDocument, saveUrl: string) {
+export type EditorStorage = {
+    /** Which project this is, and therefore which vault slot it owns. */
+    projectId: number;
+    /** Where the model is held on this computer. */
+    vault: DrawingVault;
+    /** False when IndexedDB is unavailable and the vault forgets on close. */
+    persistent: boolean;
+};
+
+export function useCadEditor(
+    initialDocument: CadDocument,
+    saveUrl: string,
+    storage: EditorStorage,
+) {
     const store = useCadDocument(initialDocument);
     const { document } = store;
 
@@ -97,6 +122,12 @@ export function useCadEditor(initialDocument: CadDocument, saveUrl: string) {
     const [renderOpen, setRenderOpen] = useState(false);
     const [hidden, setHidden] = useState<Set<string>>(() => new Set());
     const [revealHidden, setRevealHidden] = useState(false);
+
+    const { projectId, vault, persistent } = storage;
+
+    // The last revision the server was told about, so a lull does not send
+    // the same preview twice.
+    const publishedRevision = useRef(0);
 
     const exportRequest = useRef(0);
     const [exportToken, setExportToken] = useState(0);
@@ -472,8 +503,39 @@ export function useCadEditor(initialDocument: CadDocument, saveUrl: string) {
         [setViewSetting, settings],
     );
 
-    const save = useCallback(async () => {
+    /**
+     * Write the model to this computer. This is the real save — the drawing
+     * lives here, not on the server.
+     */
+    const saveLocally = useCallback(async () => {
+        const revision = store.revision;
+
         setSaveState('saving');
+
+        try {
+            const record = await vault.write(projectId, document, revision);
+
+            store.markSaved(revision);
+            setSavedAt(record.savedAt);
+            setSaveState('saved');
+        } catch {
+            setSaveState('error');
+        }
+    }, [document, projectId, store, vault]);
+
+    /**
+     * Send the server a preview of one level and the counts for the whole
+     * model, which is all the projects page and the dashboard need.
+     *
+     * A failure here costs a stale thumbnail, nothing more, so it never
+     * reports as a failed save — the drawing is already safe on the machine.
+     */
+    const publish = useCallback(async () => {
+        const preview = buildPreview(document);
+
+        if (!preview) {
+            return;
+        }
 
         try {
             const response = await fetch(saveUrl, {
@@ -485,22 +547,29 @@ export function useCadEditor(initialDocument: CadDocument, saveUrl: string) {
                     'X-Requested-With': 'XMLHttpRequest',
                     'X-XSRF-TOKEN': readXsrfToken(),
                 },
-                body: JSON.stringify({ document }),
+                body: JSON.stringify({
+                    document: preview,
+                    summary: summarise(document),
+                }),
             });
 
             if (!response.ok) {
-                throw new Error(`Save failed with status ${response.status}`);
+                throw new Error(
+                    `Publish failed with status ${response.status}`,
+                );
             }
-
-            const payload = (await response.json()) as { saved_at?: string };
-
-            store.markSaved(store.revision);
-            setSavedAt(payload.saved_at ?? null);
-            setSaveState('saved');
         } catch {
-            setSaveState('error');
+            setStatus(
+                'Preview not sent — the drawing is safe on this computer',
+            );
         }
-    }, [document, saveUrl, store]);
+    }, [document, saveUrl]);
+
+    /** Ctrl+S: put it down here, then bring the projects page up to date. */
+    const save = useCallback(async () => {
+        await saveLocally();
+        await publish();
+    }, [publish, saveLocally]);
 
     const runCommand = useCallback(
         (command: CommandId) => {
@@ -598,18 +667,32 @@ export function useCadEditor(initialDocument: CadDocument, saveUrl: string) {
         ],
     );
 
-    // Autosave shortly after the model stops changing.
+    // Every movement lands on this computer almost at once.
     useEffect(() => {
         if (!store.isDirty) {
             return;
         }
 
         const timer = window.setTimeout(() => {
-            void save();
-        }, AUTOSAVE_DELAY);
+            void saveLocally();
+        }, LOCAL_SAVE_DELAY);
 
         return () => window.clearTimeout(timer);
-    }, [store.isDirty, store.revision, save]);
+    }, [store.isDirty, store.revision, saveLocally]);
+
+    // The server's preview follows at a walking pace, once the drawing rests.
+    useEffect(() => {
+        if (store.revision === publishedRevision.current) {
+            return;
+        }
+
+        const timer = window.setTimeout(() => {
+            publishedRevision.current = store.revision;
+            void publish();
+        }, PUBLISH_DELAY);
+
+        return () => window.clearTimeout(timer);
+    }, [store.revision, publish]);
 
     return {
         store,
@@ -686,6 +769,10 @@ export function useCadEditor(initialDocument: CadDocument, saveUrl: string) {
         isolateSelection,
         resetTemporaryHide,
         exportToken,
+        projectId,
+        vault,
+        /** False when this browser cannot hold the drawing past the session. */
+        persistent,
         isDrawing: isDrawingView(activeView),
         openView,
         saveViewTemplate,

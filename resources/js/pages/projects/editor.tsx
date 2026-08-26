@@ -1,4 +1,4 @@
-import { Head } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DrawingCanvas } from '@/components/cad/drawing-canvas';
 import { ExportDialog } from '@/components/cad/export-dialog';
@@ -15,19 +15,110 @@ import { StatusBar } from '@/components/cad/status-bar';
 import { TitleBar } from '@/components/cad/title-bar';
 import { ViewControlBar } from '@/components/cad/view-control-bar';
 import { useCadEditor } from '@/hooks/use-cad-editor';
+import type { EditorStorage } from '@/hooks/use-cad-editor';
 import { elementCategory } from '@/lib/cad/model';
 import { contextualTab, SHORTCUTS } from '@/lib/cad/ribbon';
 import type { RibbonAction, ToggleId } from '@/lib/cad/ribbon';
+import { downloadDrawing, parseDrawing } from '@/lib/cad/transfer';
 import type { CadDocument, Point, SnapResult } from '@/lib/cad/types';
+import { openVault, vaultIsPersistent } from '@/lib/cad/vault';
+import { index as projectsIndex } from '@/routes/projects';
 import { update as updateDocument } from '@/routes/projects/document';
 
 type EditorProps = {
     project: ProjectSummary & { updated_at: string | null };
-    document: CadDocument;
+    /** The whole model, but only until the drawing has a home; then null. */
+    document: CadDocument | null;
+    hasLocalModel: boolean;
 };
 
-export default function Editor({ project, document }: EditorProps) {
-    const editor = useCadEditor(document, updateDocument(project.id).url);
+type WorkbenchProps = {
+    project: ProjectSummary & { updated_at: string | null };
+    document: CadDocument;
+    storage: EditorStorage;
+};
+
+/**
+ * Find the drawing before opening it.
+ *
+ * The model lives on this computer, so the first job is to look in the vault.
+ * A project that has never been saved locally still has its whole document on
+ * the server, and that copy is adopted here — which is how a drawing made on
+ * another machine, or made before drawings moved local, comes home.
+ */
+export default function Editor({
+    project,
+    document,
+    hasLocalModel,
+}: EditorProps) {
+    const [found, setFound] = useState<Resolution>({ state: 'looking' });
+
+    useEffect(() => {
+        let cancelled = false;
+
+        void (async () => {
+            const vault = await openVault();
+            const persistent = vaultIsPersistent();
+            const storage = { projectId: project.id, vault, persistent };
+            const held = await vault.read(project.id);
+
+            if (cancelled) {
+                return;
+            }
+
+            if (held) {
+                setFound({ state: 'open', document: held.document, storage });
+
+                return;
+            }
+
+            if (document) {
+                // Never saved here: take the server's copy and make it ours.
+                await vault.write(project.id, document, 0);
+
+                if (!cancelled) {
+                    setFound({ state: 'open', document, storage });
+                }
+
+                return;
+            }
+
+            setFound({ state: 'away', storage });
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [project.id, document, hasLocalModel]);
+
+    if (found.state === 'looking') {
+        return <Searching name={project.name} />;
+    }
+
+    if (found.state === 'away') {
+        return <AwayFromHome project={project} storage={found.storage} />;
+    }
+
+    return (
+        <Workbench
+            project={project}
+            document={found.document}
+            storage={found.storage}
+        />
+    );
+}
+
+type Resolution =
+    | { state: 'looking' }
+    | { state: 'away'; storage: EditorStorage }
+    | { state: 'open'; document: CadDocument; storage: EditorStorage };
+
+function Workbench({ project, document, storage }: WorkbenchProps) {
+    const editor = useCadEditor(
+        document,
+        updateDocument(project.id).url,
+        storage,
+    );
     const [pointer, setPointer] = useState<{
         cursor: Point | null;
         snap: SnapResult | null;
@@ -56,9 +147,20 @@ export default function Editor({ project, document }: EditorProps) {
                 return;
             }
 
+            // The hook holds the model but not the project's name, and the
+            // file wants to be called after the project.
+            if (action.command === 'downloadDrawing') {
+                downloadDrawing(editor.document, project.name);
+                editor.setStatus(
+                    'Drawing saved — carry it to the other computer',
+                );
+
+                return;
+            }
+
             editor.runCommand(action.command);
         },
-        [editor],
+        [editor, project.name],
     );
 
     const isToggled = useCallback(
@@ -232,6 +334,105 @@ export default function Editor({ project, document }: EditorProps) {
                 open={editor.renderOpen}
                 onOpenChange={editor.setRenderOpen}
             />
+        </div>
+    );
+}
+
+/* ------------------------------------------------- before the drawing opens */
+
+function Searching({ name }: { name: string }) {
+    return (
+        <div className="flex h-screen items-center justify-center bg-chrome text-chrome-fg">
+            <p className="animate-pulse text-sm text-chrome-muted">
+                Looking for {name} on this computer…
+            </p>
+        </div>
+    );
+}
+
+/**
+ * The project exists, but its model was drawn on another machine.
+ *
+ * Nothing here reaches for the server: the drawing genuinely is not there,
+ * so the only way in is the file the other computer exports.
+ */
+function AwayFromHome({
+    project,
+    storage,
+}: {
+    project: ProjectSummary;
+    storage: EditorStorage;
+}) {
+    const [failure, setFailure] = useState<string | null>(null);
+    const [reading, setReading] = useState(false);
+
+    async function take(file: File) {
+        setReading(true);
+        setFailure(null);
+
+        try {
+            const drawing = parseDrawing(await file.text());
+
+            await storage.vault.write(project.id, drawing, 0);
+            // Straight back through the loader, which will now find it.
+            window.location.reload();
+        } catch (problem) {
+            setFailure(
+                problem instanceof Error
+                    ? problem.message
+                    : 'That file could not be read.',
+            );
+            setReading(false);
+        }
+    }
+
+    return (
+        <div className="flex h-screen flex-col items-center justify-center gap-6 bg-chrome px-6 text-chrome-fg">
+            <div className="max-w-lg text-center">
+                <p className="ax-eyebrow text-[0.6rem] text-chrome-muted">
+                    {project.name}
+                </p>
+                <h1 className="mt-3 text-xl font-light">
+                    This drawing is not on this computer
+                </h1>
+                <p className="mt-4 text-sm text-chrome-muted">
+                    Models are kept on the machine that drew them, so only the
+                    thumbnail and the counts travel. Open the project on the
+                    computer that has it, choose{' '}
+                    <span className="text-chrome-fg">Download drawing</span>,
+                    then bring the file here.
+                </p>
+            </div>
+
+            <label className="cursor-pointer rounded-sm border border-chrome-border bg-chrome-raised px-4 py-2 text-sm transition-colors hover:border-sand">
+                <input
+                    type="file"
+                    accept=".json,application/json"
+                    className="hidden"
+                    disabled={reading}
+                    onChange={(event) => {
+                        const file = event.target.files?.[0];
+
+                        if (file) {
+                            void take(file);
+                        }
+                    }}
+                />
+                {reading ? 'Opening…' : 'Open a drawing file'}
+            </label>
+
+            {failure && (
+                <p className="max-w-lg text-center text-sm text-destructive">
+                    {failure}
+                </p>
+            )}
+
+            <Link
+                href={projectsIndex()}
+                className="text-xs text-chrome-muted underline underline-offset-4 hover:text-chrome-fg"
+            >
+                Back to projects
+            </Link>
         </div>
     );
 }

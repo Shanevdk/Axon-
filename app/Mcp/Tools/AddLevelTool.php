@@ -32,6 +32,11 @@ class AddLevelTool extends Tool
         ]);
 
         $project = Project::query()->findOrFail($validated['project_id']);
+
+        if ($away = $this->refuseIfAway($project)) {
+            return $away;
+        }
+
         $document = $this->documentFor($project);
 
         $elevation = $validated['elevation']

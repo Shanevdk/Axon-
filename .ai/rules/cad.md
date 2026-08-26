@@ -2,6 +2,7 @@
 paths:
   - 'resources/js/lib/cad/**'
   - resources/js/lib/cad/brief.ts
+  - resources/js/lib/cad/vault.ts
 ---
 
 # Cad
@@ -35,3 +36,10 @@ A new CadElement kind must be covered in: types.ts (union + ToolId if placeable)
 Image generation goes to Pollinations (`config('services.pollinations')`) — free, no API key, one model (`sana`). There is no free image model on OpenRouter, so do not try to route renders through `AskOpenRouter`.
 
 Image-to-image from the 3D view is not possible: Pollinations needs a publicly reachable URL for the reference image, which a localhost canvas capture is not.
+
+## Drawings live on the machine, the server keeps a preview
+The full `CadDocument` is held in IndexedDB (`vault.ts`, database `axon`, store `drawings`, keyed by project id) and autosaved ~250ms after every change. The server gets a one-level preview (`preview.ts` `buildPreview`) plus counts for the whole model (`summarise`) on a 1.5s beat, so `projects.document` is a thumbnail, not the model.
+
+`projects.has_local_model` is the switch. False means the stored document is still the whole model and the editor adopts it into the vault on first open — that is how old projects and new ones migrate themselves. Once true, `ProjectController@show` sends `document: null` and the editor must find it locally or ask for the file.
+
+Never count or edit `$project->document` server-side when `has_local_model` is true: use the `summary` column for counts, and MCP tools call `refuseIfAway()` because the editor's next publish would silently overwrite any write. Transfer between machines is `transfer.ts` — download the `.axon.json`, open it on the other computer.

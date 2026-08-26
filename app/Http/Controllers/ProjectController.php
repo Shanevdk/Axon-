@@ -80,7 +80,13 @@ class ProjectController extends Controller
                 'units' => $project->units,
                 'updated_at' => $project->updated_at?->toIso8601String(),
             ],
-            'document' => $starter->normalize($project->document),
+            // Only worth sending while it is still the whole model. Once the
+            // drawing lives on a machine this is a one-level preview, and the
+            // editor loads the real thing out of its local vault instead.
+            'document' => $project->has_local_model
+                ? null
+                : $starter->normalize($project->document),
+            'hasLocalModel' => $project->has_local_model,
         ]);
     }
 
@@ -116,9 +122,25 @@ class ProjectController extends Controller
             'document.doorTypes' => ['present', 'array'],
             'document.windowTypes' => ['present', 'array'],
             'document.elements' => ['present', 'array'],
+            // A summary means the document above is only a preview and the
+            // model itself is staying on the machine that drew it. Without
+            // one, this is a whole document and is stored as it always was.
+            'summary' => ['sometimes', 'array'],
+            'summary.levels' => ['required_with:summary', 'integer', 'min:0'],
+            'summary.walls' => ['required_with:summary', 'integer', 'min:0'],
+            'summary.rooms' => ['required_with:summary', 'integer', 'min:0'],
+            'summary.openings' => ['required_with:summary', 'integer', 'min:0'],
+            'summary.wallLength' => ['required_with:summary', 'numeric', 'min:0'],
+            'summary.slabArea' => ['required_with:summary', 'numeric', 'min:0'],
         ]);
 
-        $project->update(['document' => $validated['document']]);
+        $isPreview = array_key_exists('summary', $validated);
+
+        $project->forceFill([
+            'document' => $validated['document'],
+            'summary' => $isPreview ? $validated['summary'] : null,
+            'has_local_model' => $isPreview,
+        ])->save();
 
         // Every save is evidence of active work, so the clock ticks here.
         $project->recordWork();

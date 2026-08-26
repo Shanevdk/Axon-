@@ -192,3 +192,36 @@ test('deleting an unknown element id deletes nothing', function () {
 
     expect($project->fresh()->document['elements'])->toHaveCount($before);
 });
+
+test('claude refuses to edit a drawing that lives on someone machine', function () {
+    $project = Project::factory()->withSampleResidence()->create();
+    $before = count($project->document['elements']);
+
+    $project->forceFill(['has_local_model' => true])->save();
+
+    // Editing the stored preview would be silently undone by the editor's
+    // next save, so the tool says no rather than pretending.
+    $response = CadServer::tool(CreateWallsTool::class, [
+        'project_id' => $project->id,
+        'level' => 'level-1',
+        'walls' => [['a' => ['x' => 0, 'y' => 0], 'b' => ['x' => 6000, 'y' => 0]]],
+    ]);
+
+    $response->assertHasErrors();
+
+    expect($project->refresh()->document['elements'])->toHaveCount($before);
+});
+
+test('claude is told when it is looking at a preview rather than the model', function () {
+    $project = Project::factory()->withSampleResidence()->create();
+
+    CadServer::tool(GetDocumentTool::class, ['project_id' => $project->id])
+        ->assertOk()
+        ->assertSee('This is the whole model.');
+
+    $project->forceFill(['has_local_model' => true])->save();
+
+    CadServer::tool(GetDocumentTool::class, ['project_id' => $project->id])
+        ->assertOk()
+        ->assertSee('preview of one level');
+});

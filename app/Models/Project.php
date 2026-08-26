@@ -20,6 +20,8 @@ use stdClass;
  * @property string|null $address
  * @property string $units
  * @property array<string, mixed> $document
+ * @property bool $has_local_model
+ * @property array<string, mixed>|null $summary
  * @property Carbon|null $opened_at
  * @property int $worked_seconds
  * @property Carbon|null $worked_at
@@ -93,6 +95,20 @@ class Project extends Model
      */
     public function documentSummary(): array
     {
+        // Once the model lives on someone's machine the stored document is
+        // only a preview of one level, so counting it would undercount the
+        // project. The editor sends the real figures instead.
+        if ($this->summary !== null) {
+            return [
+                'levels' => (int) ($this->summary['levels'] ?? 0),
+                'walls' => (int) ($this->summary['walls'] ?? 0),
+                'rooms' => (int) ($this->summary['rooms'] ?? 0),
+                'openings' => (int) ($this->summary['openings'] ?? 0),
+                'wallLength' => (float) ($this->summary['wallLength'] ?? 0),
+                'slabArea' => (float) ($this->summary['slabArea'] ?? 0),
+            ];
+        }
+
         $elements = $this->elements();
 
         $countOf = fn (string ...$kinds): int => count(array_filter(
@@ -165,6 +181,11 @@ class Project extends Model
      */
     public function planPreview(): ?array
     {
+        // Already a preview — the editor trimmed it before sending it up.
+        if ($this->has_local_model) {
+            return ($this->document['elements'] ?? []) === [] ? null : $this->document;
+        }
+
         $level = $this->busiestLevel();
 
         if ($level === null) {
@@ -293,6 +314,8 @@ class Project extends Model
     {
         return [
             'document' => 'array',
+            'summary' => 'array',
+            'has_local_model' => 'boolean',
             'opened_at' => 'datetime',
             'worked_at' => 'datetime',
             'worked_seconds' => 'integer',
