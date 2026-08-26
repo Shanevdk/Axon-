@@ -18,6 +18,13 @@ class HandleAppearance
     {
         View::share('appearance', $request->cookie('appearance') ?? 'system');
 
+        // Painted onto <html> in the shell so the palette never flashes.
+        $palette = $request->cookie('palette');
+
+        View::share('palette', in_array($palette, ['graphite', 'blueprint', 'sand', 'mono'], true)
+            ? $palette
+            : 'graphite');
+
         return $next($request);
     }
 }

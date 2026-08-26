@@ -8,11 +8,14 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Axon brand palette.
+ * Axon palette.
  *
- * ink    #242424 — body copy and headings
- * sand   #c2ab92 — primary brand accent
- * ember  #f68b21 — link / call-to-action accent
+ * Two colours carry the whole identity — an accent for quiet marks and a
+ * call-to-action for loud ones — so a theme is really just those two and
+ * their tints. Every utility below points at a variable rather than a
+ * literal, which is what lets the palette be swapped at runtime by setting
+ * data-palette on <html>. The neutrals stay put in every theme: drawings are
+ * ink on paper regardless of what the chrome is wearing.
  */
 @theme {
     --font-sans:
@@ -24,15 +27,15 @@
     --radius-md: calc(var(--radius) - 2px);
     --radius-sm: calc(var(--radius) - 4px);
 
-    --color-ink: #242424;
-    --color-ink-soft: #3e3e3e;
-    --color-ink-muted: #4e4e4e;
-    --color-sand: #c2ab92;
-    --color-sand-light: #d8cabb;
-    --color-sand-pale: #f0e9e1;
-    --color-ember: #f68b21;
-    --color-paper: #ffffff;
-    --color-paper-warm: #f7f5f2;
+    --color-ink: var(--ink);
+    --color-ink-soft: var(--ink-soft);
+    --color-ink-muted: var(--ink-muted);
+    --color-sand: var(--accent-tone);
+    --color-sand-light: var(--accent-tone-light);
+    --color-sand-pale: var(--accent-tone-pale);
+    --color-ember: var(--cta-tone);
+    --color-paper: var(--paper);
+    --color-paper-warm: var(--paper-warm);
 
     --color-background: var(--background);
     --color-foreground: var(--foreground);
@@ -86,75 +89,171 @@
     --color-chrome-muted: #9a9186;
 }
 
+/*
+ * The palettes. Graphite is the default: cool neutrals with one confident
+ * blue, which is what most drawing offices actually want on screen all day.
+ * Blueprint leans into the drafting tradition, Sand is Van Haven's warm
+ * house palette, and Mono is strictly black and white.
+ */
+:root,
+[data-palette='graphite'] {
+    --ink: #1c1e21;
+    --ink-soft: #383c42;
+    --ink-muted: #5a6069;
+    --paper: #ffffff;
+    --paper-warm: #f6f7f9;
+    --accent-tone: #7e8894;
+    --accent-tone-light: #a6aeb8;
+    --accent-tone-pale: #eceef1;
+    --cta-tone: #1f6feb;
+    --edge: #e3e6ea;
+    --hush: #f2f4f6;
+}
+
+[data-palette='blueprint'] {
+    --ink: #16202b;
+    --ink-soft: #2f3d4c;
+    --ink-muted: #56677a;
+    --paper: #ffffff;
+    --paper-warm: #f3f6fa;
+    --accent-tone: #6c8cab;
+    --accent-tone-light: #9ab2c8;
+    --accent-tone-pale: #e6edf5;
+    --cta-tone: #0b5cad;
+    --edge: #dde5ee;
+    --hush: #eef3f8;
+}
+
+[data-palette='sand'] {
+    --ink: #242424;
+    --ink-soft: #3e3e3e;
+    --ink-muted: #4e4e4e;
+    --paper: #ffffff;
+    --paper-warm: #f7f5f2;
+    --accent-tone: #c2ab92;
+    --accent-tone-light: #d8cabb;
+    --accent-tone-pale: #f0e9e1;
+    --cta-tone: #f68b21;
+    --edge: #e7e1da;
+    --hush: #f4f2ef;
+}
+
+[data-palette='mono'] {
+    --ink: #000000;
+    --ink-soft: #2b2b2b;
+    --ink-muted: #565656;
+    --paper: #ffffff;
+    --paper-warm: #f5f5f5;
+    --accent-tone: #8a8a8a;
+    --accent-tone-light: #b4b4b4;
+    --accent-tone-pale: #ededed;
+    --cta-tone: #000000;
+    --edge: #e0e0e0;
+    --hush: #f2f2f2;
+}
+
+/* Dark mode keeps each palette's accent but drops the paper away. */
+.dark {
+    --ink: #ece9e4;
+    --ink-soft: #cdc9c3;
+    --ink-muted: #9aa0a8;
+    --paper: #16181b;
+    --paper-warm: #1d2024;
+}
+
+.dark[data-palette='sand'] {
+    --ink-muted: #9a9186;
+}
+
+.dark[data-palette='mono'] {
+    --ink: #ffffff;
+    --ink-soft: #d6d6d6;
+    --ink-muted: #9a9a9a;
+    --paper: #0a0a0a;
+    --paper-warm: #141414;
+    --accent-tone: #9a9a9a;
+    --cta-tone: #ffffff;
+}
+
+/*
+ * The shadcn surface, derived rather than declared. Nothing here is a colour
+ * of its own — every value reaches back into the palette above, so swapping
+ * data-palette carries the buttons, rings, borders and sidebar with it.
+ */
 :root {
-    --background: #ffffff;
-    --foreground: #242424;
-    --card: #ffffff;
-    --card-foreground: #242424;
-    --popover: #ffffff;
-    --popover-foreground: #242424;
-    --primary: #242424;
-    --primary-foreground: #ffffff;
-    --secondary: #f4f2ef;
-    --secondary-foreground: #242424;
-    --muted: #f4f2ef;
-    --muted-foreground: #6f665c;
-    --accent: #f0e9e1;
-    --accent-foreground: #242424;
+    --background: var(--paper);
+    --foreground: var(--ink);
+    --card: var(--paper);
+    --card-foreground: var(--ink);
+    --popover: var(--paper);
+    --popover-foreground: var(--ink);
+    --primary: var(--ink);
+    --primary-foreground: var(--paper);
+    --secondary: var(--hush);
+    --secondary-foreground: var(--ink);
+    --muted: var(--hush);
+    --muted-foreground: var(--ink-muted);
+    --accent: var(--accent-tone-pale);
+    --accent-foreground: var(--ink);
     --destructive: #b4321f;
     --destructive-foreground: #b4321f;
-    --border: #e7e1da;
-    --input: #e7e1da;
-    --ring: #c2ab92;
-    --chart-1: #c2ab92;
-    --chart-2: #f68b21;
-    --chart-3: #4e4e4e;
-    --chart-4: #82c0c7;
-    --chart-5: #bcc8c9;
+    --border: var(--edge);
+    --input: var(--edge);
+    --ring: var(--accent-tone);
+    --chart-1: var(--accent-tone);
+    --chart-2: var(--cta-tone);
+    --chart-3: var(--ink-muted);
+    --chart-4: var(--accent-tone-light);
+    --chart-5: var(--edge);
     --radius: 0.5rem;
+    /* The sidebar is deliberately the dark end of whatever palette is on. */
     --sidebar: #242424;
     --sidebar-foreground: #e8e3dc;
-    --sidebar-primary: #c2ab92;
+    --sidebar-primary: var(--accent-tone);
     --sidebar-primary-foreground: #242424;
     --sidebar-accent: #333130;
-    --sidebar-accent-foreground: #f0e9e1;
+    --sidebar-accent-foreground: var(--accent-tone-pale);
     --sidebar-border: #3a3735;
-    --sidebar-ring: #c2ab92;
+    --sidebar-ring: var(--accent-tone);
 }
 
 .dark {
-    --background: #1a1a19;
-    --foreground: #ede8e2;
-    --card: #232322;
-    --card-foreground: #ede8e2;
-    --popover: #232322;
-    --popover-foreground: #ede8e2;
-    --primary: #c2ab92;
-    --primary-foreground: #242424;
-    --secondary: #2d2c2a;
-    --secondary-foreground: #ede8e2;
-    --muted: #2d2c2a;
-    --muted-foreground: #9a9186;
-    --accent: #33302d;
-    --accent-foreground: #f0e9e1;
+    /* Dark mode moves the neutrals, not the palette's accent. */
+    --edge: #32363b;
+    --hush: #24272b;
+
+    --background: var(--paper);
+    --foreground: var(--ink);
+    --card: var(--paper-warm);
+    --card-foreground: var(--ink);
+    --popover: var(--paper-warm);
+    --popover-foreground: var(--ink);
+    --primary: var(--accent-tone);
+    --primary-foreground: #16181b;
+    --secondary: var(--hush);
+    --secondary-foreground: var(--ink);
+    --muted: var(--hush);
+    --muted-foreground: var(--ink-muted);
+    --accent: #2b2f34;
+    --accent-foreground: var(--ink);
     --destructive: #7d2517;
     --destructive-foreground: #e2603f;
-    --border: #35332f;
-    --input: #35332f;
-    --ring: #c2ab92;
-    --chart-1: #c2ab92;
-    --chart-2: #f68b21;
-    --chart-3: #bcc8c9;
-    --chart-4: #82c0c7;
-    --chart-5: #9a9186;
-    --sidebar: #141413;
-    --sidebar-foreground: #e8e3dc;
-    --sidebar-primary: #c2ab92;
-    --sidebar-primary-foreground: #242424;
-    --sidebar-accent: #262523;
-    --sidebar-accent-foreground: #f0e9e1;
-    --sidebar-border: #2f2d2a;
-    --sidebar-ring: #c2ab92;
+    --border: var(--edge);
+    --input: var(--edge);
+    --ring: var(--accent-tone);
+    --chart-1: var(--accent-tone);
+    --chart-2: var(--cta-tone);
+    --chart-3: var(--accent-tone-light);
+    --chart-4: var(--ink-muted);
+    --chart-5: var(--edge);
+    --sidebar: #101214;
+    --sidebar-foreground: var(--ink);
+    --sidebar-primary: var(--accent-tone);
+    --sidebar-primary-foreground: #16181b;
+    --sidebar-accent: #1f2226;
+    --sidebar-accent-foreground: var(--ink);
+    --sidebar-border: #2a2e33;
+    --sidebar-ring: var(--accent-tone);
 }
 
 @layer base {
@@ -178,6 +277,48 @@
 
     .ax-rule {
         @apply h-px w-12 bg-sand;
+    }
+}
+
+@layer components {
+    /*
+     * The front page plan draws itself on arrival, the way a drawing arrives
+     * under a pen. Paths opt in with .ax-draw and stagger with a delay.
+     */
+    @keyframes ax-draw {
+        from {
+            stroke-dashoffset: var(--ax-draw-length, 600);
+        }
+        to {
+            stroke-dashoffset: 0;
+        }
+    }
+
+    @keyframes ax-fade {
+        from {
+            opacity: 0;
+        }
+        to {
+            opacity: 1;
+        }
+    }
+
+    .ax-draw {
+        stroke-dasharray: var(--ax-draw-length, 600);
+        animation: ax-draw 1.4s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+    }
+
+    .ax-appear {
+        opacity: 0;
+        animation: ax-fade 0.6s ease-out forwards;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .ax-draw,
+        .ax-appear {
+            animation-duration: 0.01ms;
+            animation-delay: 0ms !important;
+        }
     }
 }
 

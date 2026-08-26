@@ -308,3 +308,28 @@ test('a document without wall types is rejected', function () {
         ])
         ->assertJsonValidationErrors('document.wallTypes');
 });
+
+test('signing in toward a drawing that has gone lands on the register', function () {
+    $user = User::factory()->create(['signed_in_at' => now()->subDay()]);
+
+    // Bounced off a drawing that no longer exists — a deleted project, or a
+    // database rebuilt underneath them.
+    $this->get('/projects/999999')->assertRedirect(route('login'));
+
+    $this->post(route('login.store'), [
+        'email' => $user->email,
+        'password' => 'password',
+    ])->assertRedirect('/projects/999999');
+
+    $this->actingAs($user)
+        ->get('/projects/999999')
+        ->assertRedirect(route('projects.index'));
+});
+
+test('a guest still gets a plain 404 for a missing drawing', function () {
+    // Only signed-in people get the friendly landing; nothing is leaked to
+    // anyone else about which ids exist.
+    $this->get('/projects/999999')->assertRedirect(route('login'));
+
+    $this->getJson('/projects/999999')->assertUnauthorized();
+});

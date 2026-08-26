@@ -2,6 +2,7 @@
 
 use App\Models\User;
 use Illuminate\Support\Facades\RateLimiter;
+use Inertia\Testing\AssertableInertia;
 use Laravel\Fortify\Features;
 
 test('login screen can be rendered', function () {
@@ -10,8 +11,8 @@ test('login screen can be rendered', function () {
     $response->assertOk();
 });
 
-test('users can authenticate using the login screen', function () {
-    $user = User::factory()->create();
+test('a first sign in lands on the front page', function () {
+    $user = User::factory()->create(['signed_in_at' => null]);
 
     $response = $this->post(route('login.store'), [
         'email' => $user->email,
@@ -19,7 +20,30 @@ test('users can authenticate using the login screen', function () {
     ]);
 
     $this->assertAuthenticated();
-    $response->assertRedirect(route('dashboard', absolute: false));
+    $response->assertRedirect(route('home', absolute: false));
+
+    expect($user->refresh()->signed_in_at)->not->toBeNull();
+});
+
+test('every sign in after the first goes straight to the studio', function () {
+    $user = User::factory()->create(['signed_in_at' => now()->subWeek()]);
+
+    $this->post(route('login.store'), [
+        'email' => $user->email,
+        'password' => 'password',
+    ])->assertRedirect(route('dashboard', absolute: false));
+});
+
+test('an intended destination still wins over both', function () {
+    $user = User::factory()->create(['signed_in_at' => null]);
+
+    // Bounced off a protected page, so that is where they should end up.
+    $this->get(route('clients.index'))->assertRedirect(route('login'));
+
+    $this->post(route('login.store'), [
+        'email' => $user->email,
+        'password' => 'password',
+    ])->assertRedirect(route('clients.index'));
 });
 
 test('users with two factor enabled are redirected to two factor challenge', function () {
@@ -74,4 +98,40 @@ test('users are rate limited', function () {
     ]);
 
     $response->assertTooManyRequests();
+});
+
+test('the front page serves both a visitor and someone signed in', function () {
+    $this->get(route('home'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->component('welcome')
+            ->where('auth.user', null)
+        );
+
+    $user = User::factory()->create(['name' => 'Margaret Chen']);
+
+    $this->actingAs($user)
+        ->get(route('home'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->component('welcome')
+            // The welcome greets people by their first name.
+            ->where('auth.user.name', 'Margaret Chen')
+        );
+});
+
+test('the chosen palette is painted into the shell before react boots', function () {
+    // No cookie yet, so a first visitor gets the professional default.
+    $this->get(route('home'))
+        ->assertOk()
+        ->assertSee('data-palette="graphite"', false);
+
+    $this->withCookie('palette', 'mono')
+        ->get(route('home'))
+        ->assertSee('data-palette="mono"', false);
+
+    // A crafted cookie cannot inject an attribute value.
+    $this->withCookie('palette', '"><script>')
+        ->get(route('home'))
+        ->assertSee('data-palette="graphite"', false);
 });

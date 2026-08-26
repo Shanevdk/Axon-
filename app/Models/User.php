@@ -24,6 +24,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property string $email
  * @property Carbon|null $email_verified_at
  * @property string $password
+ * @property Carbon|null $signed_in_at
  * @property string|null $two_factor_secret
  * @property string|null $two_factor_recovery_codes
  * @property Carbon|null $two_factor_confirmed_at
@@ -56,6 +57,22 @@ class User extends Authenticatable implements PasskeyUser
     public function clients(): HasMany
     {
         return $this->hasMany(Client::class);
+    }
+
+    /**
+     * Mark that this user has arrived, saying whether it was their first time.
+     *
+     * The answer decides where they land: the front page introduces Axon on
+     * the first sign-in, and every one after that goes straight to work.
+     * Saved quietly so arriving does not look like account activity.
+     */
+    public function recordSignIn(): bool
+    {
+        $isFirst = $this->signed_in_at === null;
+
+        $this->forceFill(['signed_in_at' => now()])->saveQuietly();
+
+        return $isFirst;
     }
 
     /**
@@ -137,6 +154,7 @@ class User extends Authenticatable implements PasskeyUser
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'signed_in_at' => 'datetime',
             'two_factor_confirmed_at' => 'datetime',
         ];
     }

@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\User;
 use Laravel\Fortify\Features;
 
 beforeEach(function () {
@@ -21,5 +22,9 @@ test('new users can register', function () {
     ]);
 
     $this->assertAuthenticated();
-    $response->assertRedirect(route('dashboard', absolute: false));
+    // Registering is a first arrival, so it lands on the front page.
+    $response->assertRedirect(route('home', absolute: false));
+
+    expect(User::firstWhere('email', 'test@example.com')->signed_in_at)
+        ->not->toBeNull();
 });
