@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "d81293b51249cb00a8bd0ba8e146bcf0",
+    "content-hash": "76b7f74e223f3c76a46f55b1a66c03b0",
     "packages": [
         {
             "name": "bacon/bacon-qr-code",
@@ -2615,23 +2615,24 @@
         },
         {
             "name": "mongodb/mongodb",
-            "version": "1.21.4",
+            "version": "2.3.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/mongodb/mongo-php-library",
-                "reference": "75754fbb53a980f0e9b1d5ddfff99ee4f44463c2"
+                "reference": "12e56461166d915e3dd8e4969ad0940ed5207d88"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/mongodb/mongo-php-library/zipball/75754fbb53a980f0e9b1d5ddfff99ee4f44463c2",
-                "reference": "75754fbb53a980f0e9b1d5ddfff99ee4f44463c2",
+                "url": "https://api.github.com/repos/mongodb/mongo-php-library/zipball/12e56461166d915e3dd8e4969ad0940ed5207d88",
+                "reference": "12e56461166d915e3dd8e4969ad0940ed5207d88",
                 "shasum": ""
             },
             "require": {
                 "composer-runtime-api": "^2.0",
-                "ext-mongodb": "^1.21.0",
+                "ext-mongodb": "^2.3",
                 "php": "^8.1",
-                "psr/log": "^1.1.4|^2|^3"
+                "psr/log": "^1.1.4|^2|^3",
+                "symfony/polyfill-php85": "^1.33"
             },
             "replace": {
                 "mongodb/builder": "*"
@@ -2641,7 +2642,7 @@
                 "phpunit/phpunit": "^10.5.35",
                 "rector/rector": "^2.3.4",
                 "squizlabs/php_codesniffer": "^3.7",
-                "vimeo/psalm": "6.5.*"
+                "vimeo/psalm": "~6.14.2"
             },
             "type": "library",
             "extra": {
@@ -2683,7 +2684,7 @@
                 "mongodb",
                 "persistence"
             ],
-            "time": "2026-08-27T15:08:04+00:00"
+            "time": "2026-04-28T12:50:06+00:00"
         },
         {
             "name": "monolog/monolog",
@@ -11697,5 +11698,8 @@
         "php": "^8.3"
     },
     "platform-dev": {},
+    "platform-overrides": {
+        "ext-mongodb": "2.3.1"
+    },
     "plugin-api-version": "2.9.0"
 }
