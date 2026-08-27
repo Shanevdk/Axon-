@@ -45,6 +45,19 @@ export const CAD_THEME = {
     dimension: '#2a6f8f',
     text: '#242424',
     snap: '#0f7fbe',
+    /** MEP system colours, muted to sit inside the ink-on-paper palette. */
+    ductSupply: '#2a6f8f',
+    ductReturn: '#a03d2d',
+    ductExhaust: '#6c655d',
+    pipeDomestic: '#2a6f8f',
+    pipeSanitary: '#7a5a41',
+    pipeHydronic: '#3f7d4e',
+    pipeFire: '#b3362a',
+    cableTray: '#a08252',
+    /** Site graphics: topography fill and the legal boundary. */
+    topo: '#7d8b66',
+    topoFill: 'rgba(125, 139, 102, 0.14)',
+    propertyLine: '#7c4a66',
     background3d: '#1f1e1d',
     background3dTop: '#33302c',
     ground: '#2a2825',
@@ -61,6 +74,14 @@ export const MODEL_MATERIALS = {
     frame: '#4a453f',
     /** Imported STL and OBJ geometry, tinted so it reads as not-yet-modelled. */
     mesh: '#c2ab92',
+    railing: '#5a544d',
+    foundation: '#a8a29a',
+    duct: '#9fa8ad',
+    pipe: '#96705b',
+    cableTray: '#7f858b',
+    fixture: '#b3a48f',
+    planting: '#7d8b66',
+    site: '#8f8973',
 } as const;
 
 /** Direction of the key light used for flat shading in the 3D views. */

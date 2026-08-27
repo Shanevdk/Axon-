@@ -5,7 +5,12 @@ import {
     gripsFor,
     temporaryDimensionsFor,
 } from '@/lib/cad/manipulators';
-import { buildWallGeometry, wallsOnLevel } from '@/lib/cad/model';
+import {
+    buildWallGeometry,
+    maxOpeningWidth,
+    MIN_OPENING_WIDTH,
+    wallsOnLevel,
+} from '@/lib/cad/model';
 import type { CadDocument, DoorElement, WallElement } from '@/lib/cad/types';
 
 function documentWithWall(): CadDocument {
@@ -80,13 +85,19 @@ describe('gripsFor', () => {
         });
     });
 
-    it('puts a slide grip at the centre of a selected door', () => {
+    it('puts a slide grip at the centre of a selected door and one on each jamb', () => {
         const document = documentWithWall();
         const grips = gripsFor(document, ['door-1'], geometryOf(document));
 
-        expect(grips).toHaveLength(1);
+        expect(grips).toHaveLength(3);
         expect(grips[0].kind).toBe('openingSlide');
         expect(grips[0].point.x).toBeCloseTo(3000);
+
+        expect(grips[1]).toMatchObject({ kind: 'openingJamb', end: 'a' });
+        expect(grips[1].point.x).toBeCloseTo(3000 - 915 / 2);
+
+        expect(grips[2]).toMatchObject({ kind: 'openingJamb', end: 'b' });
+        expect(grips[2].point.x).toBeCloseTo(3000 + 915 / 2);
     });
 });
 
@@ -117,6 +128,51 @@ describe('applyGrip', () => {
 
         // Clamped so the 915 leaf stays inside the 6000 wall.
         expect(door?.t).toBeCloseTo(1 - 915 / 2 / 6000);
+    });
+
+    it('widens a door by dragging a jamb, holding the other jamb still', () => {
+        const document = documentWithWall();
+        const geometry = geometryOf(document);
+        const [, jambA] = gripsFor(document, ['door-1'], geometry);
+
+        // The door spans 2542.5 → 3457.5. Drag the near jamb out to 2000.
+        const next = applyGrip(document, jambA, { x: 2000, y: 0 }, geometry);
+        const door = next.elements.find(
+            (element): element is DoorElement => element.kind === 'door',
+        );
+
+        expect(door?.width).toBeCloseTo(3457.5 - 2000);
+        // The far jamb has not moved.
+        expect((door?.t ?? 0) * 6000 + (door?.width ?? 0) / 2).toBeCloseTo(
+            3457.5,
+        );
+    });
+
+    it('will not drag an opening wider than the wall holding it', () => {
+        const document = documentWithWall();
+        const geometry = geometryOf(document);
+        const [, jambA] = gripsFor(document, ['door-1'], geometry);
+
+        const next = applyGrip(document, jambA, { x: -50_000, y: 0 }, geometry);
+        const door = next.elements.find(
+            (element): element is DoorElement => element.kind === 'door',
+        );
+
+        expect(door?.width).toBeCloseTo(maxOpeningWidth(6000));
+        expect(door?.width ?? 0).toBeLessThan(6000);
+    });
+
+    it('will not drag an opening away to nothing', () => {
+        const document = documentWithWall();
+        const geometry = geometryOf(document);
+        const [, , jambB] = gripsFor(document, ['door-1'], geometry);
+
+        const next = applyGrip(document, jambB, { x: 2542.5, y: 0 }, geometry);
+        const door = next.elements.find(
+            (element): element is DoorElement => element.kind === 'door',
+        );
+
+        expect(door?.width).toBe(MIN_OPENING_WIDTH);
     });
 });
 
@@ -173,7 +229,7 @@ describe('temporaryDimensionsFor', () => {
             geometryOf(document),
         );
 
-        expect(dimensions).toHaveLength(2);
+        expect(dimensions).toHaveLength(3);
         expect(dimensions[0].value).toBeCloseTo(3000);
         expect(dimensions[1].value).toBeCloseTo(3000);
 
@@ -184,6 +240,42 @@ describe('temporaryDimensionsFor', () => {
         );
 
         expect(door?.t).toBeCloseTo(2000 / 6000);
+    });
+
+    it('reports the width of a selected door and resizes it when typed into', () => {
+        const document = documentWithWall();
+        const dimensions = temporaryDimensionsFor(
+            document,
+            ['door-1'],
+            geometryOf(document),
+        );
+        const width = dimensions[2];
+
+        expect(width.value).toBeCloseTo(915);
+
+        const next = width.apply(document, 1800);
+        const door = next.elements.find(
+            (element): element is DoorElement => element.kind === 'door',
+        );
+
+        // The instance carries the new size; the door type is untouched.
+        expect(door?.width).toBeCloseTo(1800);
+        expect(next.doorTypes[0].width).toBe(915);
+        // Widened about its centre, so it has not moved along the wall.
+        expect(door?.t).toBeCloseTo(0.5);
+    });
+
+    it('offers no grips and no dimensions on a pinned element', () => {
+        const document = documentWithWall();
+        document.elements = document.elements.map((element) =>
+            element.id === 'door-1' ? { ...element, pinned: true } : element,
+        );
+        const geometry = geometryOf(document);
+
+        expect(gripsFor(document, ['door-1'], geometry)).toHaveLength(0);
+        expect(
+            temporaryDimensionsFor(document, ['door-1'], geometry),
+        ).toHaveLength(0);
     });
 
     it('shows nothing for a multi-element selection', () => {

@@ -1,7 +1,12 @@
 import { pointInPolygon } from '@/lib/cad/geometry';
 import type { Face, Vertex } from '@/lib/cad/mesh';
 import { AMBIENT_LIGHT, CAD_THEME, LIGHT_DIRECTION } from '@/lib/cad/theme';
-import type { OrbitCamera, Point, VisualStyle } from '@/lib/cad/types';
+import type {
+    OrbitCamera,
+    Point,
+    VisualStyle,
+    WalkCamera,
+} from '@/lib/cad/types';
 
 const NEAR_PLANE = 60;
 const FIELD_OF_VIEW = Math.PI / 4;
@@ -50,6 +55,102 @@ export function cameraBasis(camera: OrbitCamera): Basis {
     const up = cross3(right, forward);
 
     return { eye, right, up, forward };
+}
+
+/**
+ * Express a first-person eye as the orbit camera the renderer draws from.
+ *
+ * With the distance at zero the eye and the target coincide, and aiming the
+ * orbit away from the walk direction makes `forward` come out along it — so
+ * walk mode needs no second projection path.
+ */
+export function walkOrbit(walk: WalkCamera): OrbitCamera {
+    return {
+        azimuth: walk.yaw + Math.PI,
+        elevation: -walk.pitch,
+        distance: 0,
+        target: walk.eye,
+    };
+}
+
+/** How far ahead of the eye a playing tour aims, in millimetres. */
+const TOUR_LOOKAHEAD = 2000;
+
+/** Total length of a walkthrough path, in millimetres. */
+export function tourLength(points: Point[]): number {
+    let total = 0;
+
+    for (let index = 1; index < points.length; index++) {
+        total += Math.hypot(
+            points[index].x - points[index - 1].x,
+            points[index].y - points[index - 1].y,
+        );
+    }
+
+    return total;
+}
+
+function pointAlongPath(points: Point[], along: number): Point {
+    let remaining = Math.max(along, 0);
+
+    for (let index = 1; index < points.length; index++) {
+        const from = points[index - 1];
+        const to = points[index];
+        const span = Math.hypot(to.x - from.x, to.y - from.y);
+
+        if (remaining <= span && span > 0) {
+            const t = remaining / span;
+
+            return {
+                x: from.x + (to.x - from.x) * t,
+                y: from.y + (to.y - from.y) * t,
+            };
+        }
+
+        remaining -= span;
+    }
+
+    return points[points.length - 1];
+}
+
+/**
+ * The camera pose a walkthrough plays at `along` millimetres into its path:
+ * the eye on the path, aimed at a point a stride ahead so corners turn
+ * smoothly rather than snapping segment to segment.
+ */
+export function tourPose(
+    points: Point[],
+    along: number,
+): { position: Point; yaw: number } | null {
+    if (points.length < 2) {
+        return null;
+    }
+
+    const total = tourLength(points);
+
+    if (total < 1) {
+        return null;
+    }
+
+    const clamped = Math.min(Math.max(along, 0), total);
+    const position = pointAlongPath(points, clamped);
+    const ahead = pointAlongPath(
+        points,
+        Math.min(clamped + TOUR_LOOKAHEAD, total),
+    );
+
+    let dx = ahead.x - position.x;
+    let dy = ahead.y - position.y;
+
+    // At the very end the lookahead collapses; hold the final direction.
+    if (Math.hypot(dx, dy) < 1) {
+        const from = points[points.length - 2];
+        const to = points[points.length - 1];
+        dx = to.x - from.x;
+        dy = to.y - from.y;
+    }
+
+    return { position, yaw: Math.atan2(dy, dx) };
 }
 
 /**

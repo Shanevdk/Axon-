@@ -2,22 +2,32 @@ import { lerp, signedArea, triangulate } from '@/lib/cad/geometry';
 import {
     buildWallGeometry,
     clampOpeningParameter,
+    fixtureFootprint,
     openingSize,
     wallsOnLevel,
 } from '@/lib/cad/model';
 import type { WallGeometry } from '@/lib/cad/model';
 import type {
     BeamElement,
+    BraceElement,
+    CableTrayElement,
     CadDocument,
     CeilingElement,
     ColumnElement,
+    DuctElement,
+    FixtureElement,
     FloorElement,
+    FootingElement,
     MeshElement,
     OpeningElement,
+    PadElement,
+    PipeElement,
     Point,
+    RailingElement,
     RampElement,
     RoofElement,
     StairElement,
+    ToposurfaceElement,
 } from '@/lib/cad/types';
 
 export type Vec3 = { x: number; y: number; z: number };
@@ -32,7 +42,15 @@ export type SolidCategory =
     | 'ceiling'
     | 'stair'
     | 'beam'
-    | 'mesh';
+    | 'mesh'
+    | 'railing'
+    | 'foundation'
+    | 'duct'
+    | 'pipe'
+    | 'cableTray'
+    | 'fixture'
+    | 'planting'
+    | 'site';
 
 /**
  * A closed polyhedron. Every face is planar and wound counter-clockwise when
@@ -171,6 +189,84 @@ export function buildSolids(
 
             if (element.kind === 'ramp') {
                 solids.push(...rampSolids(element, level.elevation));
+            }
+
+            if (element.kind === 'railing') {
+                solids.push(...railingSolids(element, level.elevation));
+            }
+
+            if (element.kind === 'brace') {
+                const brace = braceSolid(element, level.elevation);
+
+                if (brace) {
+                    solids.push(brace);
+                }
+            }
+
+            if (element.kind === 'footing') {
+                solids.push(footingSolid(element, level.elevation));
+            }
+
+            if (element.kind === 'duct') {
+                const duct = serviceRunSolid(
+                    element,
+                    level.elevation,
+                    'duct',
+                    element.width,
+                    Math.max(element.width / 2, 150),
+                );
+
+                if (duct) {
+                    solids.push(duct);
+                }
+            }
+
+            if (element.kind === 'pipe') {
+                const pipe = serviceRunSolid(
+                    element,
+                    level.elevation,
+                    'pipe',
+                    element.diameter,
+                    element.diameter,
+                );
+
+                if (pipe) {
+                    solids.push(pipe);
+                }
+            }
+
+            if (element.kind === 'cableTray') {
+                const tray = serviceRunSolid(
+                    element,
+                    level.elevation,
+                    'cableTray',
+                    element.width,
+                    150,
+                );
+
+                if (tray) {
+                    solids.push(tray);
+                }
+            }
+
+            if (element.kind === 'fixture') {
+                solids.push(...fixtureSolids(element, level.elevation));
+            }
+
+            if (element.kind === 'pad') {
+                const pad = padSolid(element, level.elevation);
+
+                if (pad) {
+                    solids.push(pad);
+                }
+            }
+
+            if (element.kind === 'toposurface') {
+                const topo = toposurfaceSolid(element, level.elevation);
+
+                if (topo) {
+                    solids.push(topo);
+                }
             }
         });
     });
@@ -1093,4 +1189,258 @@ function rampSolids(ramp: RampElement, elevation: number): Solid[] {
     }
 
     return solids;
+}
+
+/* ------------------------------------- railings, braces, MEP, foundations */
+
+/** Rectangular footprint of a run between two points, `width` across. */
+function stripFootprint(a: Point, b: Point, width: number): Point[] {
+    const along = normalize2({ x: b.x - a.x, y: b.y - a.y });
+    const side = { x: (-along.y * width) / 2, y: (along.x * width) / 2 };
+
+    return [
+        { x: a.x - side.x, y: a.y - side.y },
+        { x: b.x - side.x, y: b.y - side.y },
+        { x: b.x + side.x, y: b.y + side.y },
+        { x: a.x + side.x, y: a.y + side.y },
+    ];
+}
+
+/** Square rail section, in millimetres. */
+const RAIL = 60;
+
+/** Baluster post spacing along a railing, in millimetres. */
+const POST_SPACING = 1200;
+
+/** A railing as its top rail with a post at every module. */
+function railingSolids(railing: RailingElement, elevation: number): Solid[] {
+    const run = distance2(railing.a, railing.b);
+
+    if (run < 50) {
+        return [];
+    }
+
+    const top = elevation + railing.height;
+    const solids: Solid[] = [
+        {
+            id: `${railing.id}-rail`,
+            name: 'Top rail',
+            category: 'railing',
+            elementId: railing.id,
+            level: railing.level,
+            faces: prism(
+                stripFootprint(railing.a, railing.b, RAIL),
+                top - RAIL,
+                top,
+            ),
+            base: top - RAIL,
+        },
+    ];
+
+    const posts = Math.max(Math.round(run / POST_SPACING), 1);
+
+    for (let index = 0; index <= posts; index++) {
+        const at = lerp(railing.a, railing.b, index / posts);
+
+        solids.push({
+            id: `${railing.id}-post-${index}`,
+            name: 'Baluster post',
+            category: 'railing',
+            elementId: railing.id,
+            level: railing.level,
+            faces: prism(boxAround(at, RAIL, 0), elevation, top - RAIL),
+            base: elevation,
+        });
+    }
+
+    return solids;
+}
+
+/**
+ * A brace as a sloped square-section member from the level at `a` up to its
+ * rise at `b` — a skewed prism whose end faces stay vertical.
+ */
+function braceSolid(brace: BraceElement, elevation: number): Solid | null {
+    const run = distance2(brace.a, brace.b);
+
+    if (run < 50 || brace.rise < 50) {
+        return null;
+    }
+
+    const [a1, b1, b2, a2] = stripFootprint(brace.a, brace.b, brace.width);
+    const bottomA = elevation;
+    const bottomB = elevation + brace.rise - brace.width;
+    const at = (p: Point, z: number): Vec3 => ({ x: p.x, y: p.y, z });
+
+    // The base winds counter-clockwise, so caps and sides follow prism().
+    const lower = [
+        at(a1, bottomA),
+        at(b1, bottomB),
+        at(b2, bottomB),
+        at(a2, bottomA),
+    ];
+    const upper = lower.map((v) => ({ ...v, z: v.z + brace.width }));
+
+    const faces: Vec3[][] = [[...lower].reverse(), upper];
+
+    for (let index = 0; index < lower.length; index++) {
+        const next = (index + 1) % lower.length;
+
+        faces.push([lower[index], lower[next], upper[next], upper[index]]);
+    }
+
+    return {
+        id: brace.id,
+        name: `Brace ${brace.width}mm`,
+        category: 'beam',
+        elementId: brace.id,
+        level: brace.level,
+        faces,
+        base: bottomA,
+    };
+}
+
+function footingSolid(footing: FootingElement, elevation: number): Solid {
+    return {
+        id: footing.id,
+        name: `Pad footing ${footing.width}mm`,
+        category: 'foundation',
+        elementId: footing.id,
+        level: footing.level,
+        faces: prism(
+            boxAround(footing.p, footing.width, 0),
+            elevation - footing.depth,
+            elevation,
+        ),
+        base: elevation - footing.depth,
+    };
+}
+
+/**
+ * Ducts, pipes and cable trays are all a rectangular run centred on their
+ * elevation; only the section proportions differ.
+ */
+function serviceRunSolid(
+    run: DuctElement | PipeElement | CableTrayElement,
+    elevation: number,
+    category: SolidCategory,
+    width: number,
+    depth: number,
+): Solid | null {
+    if (distance2(run.a, run.b) < 10) {
+        return null;
+    }
+
+    const centre = elevation + run.elevation;
+
+    return {
+        id: run.id,
+        name: `${category} run`,
+        category,
+        elementId: run.id,
+        level: run.level,
+        faces: prism(
+            stripFootprint(run.a, run.b, width),
+            centre - depth / 2,
+            centre + depth / 2,
+        ),
+        base: centre - depth / 2,
+    };
+}
+
+/** Trunk section of a placed tree, in millimetres. */
+const TRUNK = 200;
+
+/**
+ * A placed component as a body per category: most are one box, planting
+ * grows a trunk under its canopy so trees read as trees in the model.
+ */
+function fixtureSolids(fixture: FixtureElement, elevation: number): Solid[] {
+    const footprint = fixtureFootprint(fixture);
+    const bottom = elevation + fixture.elevation;
+
+    if (fixture.category === 'planting') {
+        const canopyBase = bottom + fixture.height * 0.35;
+
+        return [
+            {
+                id: `${fixture.id}-trunk`,
+                name: 'Trunk',
+                category: 'fixture',
+                elementId: fixture.id,
+                level: fixture.level,
+                faces: prism(
+                    boxAround(fixture.p, TRUNK, fixture.rotation),
+                    bottom,
+                    canopyBase,
+                ),
+                base: bottom,
+            },
+            {
+                id: `${fixture.id}-canopy`,
+                name: 'Canopy',
+                category: 'planting',
+                elementId: fixture.id,
+                level: fixture.level,
+                faces: prism(footprint, canopyBase, bottom + fixture.height),
+                base: canopyBase,
+            },
+        ];
+    }
+
+    const category: SolidCategory =
+        fixture.category === 'parking' ? 'site' : 'fixture';
+
+    return [
+        {
+            id: fixture.id,
+            name: fixture.name,
+            category,
+            elementId: fixture.id,
+            level: fixture.level,
+            faces: prism(footprint, bottom, bottom + fixture.height),
+            base: bottom,
+        },
+    ];
+}
+
+/* ---------------------------------------------------------------- the site */
+
+function padSolid(pad: PadElement, elevation: number): Solid | null {
+    const faces = prism(pad.points, elevation - pad.thickness, elevation);
+
+    if (faces.length === 0) {
+        return null;
+    }
+
+    return {
+        id: pad.id,
+        name: `Building pad ${pad.thickness}mm`,
+        category: 'floor',
+        elementId: pad.id,
+        level: pad.level,
+        faces,
+        base: elevation - pad.thickness,
+    };
+}
+
+function toposurfaceSolid(
+    topo: ToposurfaceElement,
+    elevation: number,
+): Solid | null {
+    const faces = prism(topo.points, elevation - topo.depth, elevation);
+
+    if (faces.length === 0) {
+        return null;
+    }
+
+    return {
+        id: topo.id,
+        name: 'Toposurface',
+        category: 'site',
+        elementId: topo.id,
+        level: topo.level,
+        faces,
+        base: elevation - topo.depth,
+    };
 }

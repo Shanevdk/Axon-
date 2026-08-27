@@ -60,7 +60,9 @@ export function parseDrawing(contents: string): CadDocument {
     try {
         parsed = JSON.parse(contents);
     } catch {
-        throw new Error('That file is not an Axon drawing — it is not even JSON.');
+        throw new Error(
+            'That file is not an Axon drawing — it is not even JSON.',
+        );
     }
 
     if (!isCadDocument(parsed)) {

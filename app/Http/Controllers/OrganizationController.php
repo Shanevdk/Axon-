@@ -82,6 +82,7 @@ class OrganizationController extends Controller
                     ]),
             ],
             'messages' => $organization->messages()
+                ->channel()
                 ->with('user:id,name')
                 ->latest('id')
                 ->limit(self::MESSAGE_LIMIT)

@@ -18,6 +18,8 @@ export type ProjectSummary = {
     number: string | null;
     client: string | null;
     address: string | null;
+    /** Where the building is, for the code the assistant answers under. */
+    jurisdiction: string | null;
     units: 'metric' | 'imperial';
 };
 
@@ -98,6 +100,18 @@ export function ProjectInfoDialog({
                                 />
                             </Field>
 
+                            <Field
+                                label="Jurisdiction"
+                                error={errors.jurisdiction}
+                                hint="The city, province or state, and country. Decides which building and fire code the assistant answers under."
+                            >
+                                <Input
+                                    name="jurisdiction"
+                                    defaultValue={project.jurisdiction ?? ''}
+                                    placeholder="Kelowna, British Columbia, Canada"
+                                />
+                            </Field>
+
                             <DialogFooter>
                                 <Button
                                     type="button"
@@ -121,10 +135,12 @@ export function ProjectInfoDialog({
 function Field({
     label,
     error,
+    hint,
     children,
 }: {
     label: string;
     error?: string;
+    hint?: string;
     children: React.ReactNode;
 }) {
     return (
@@ -133,6 +149,9 @@ function Field({
                 {label}
             </Label>
             {children}
+            {hint && !error && (
+                <p className="text-xs text-muted-foreground">{hint}</p>
+            )}
             {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
     );

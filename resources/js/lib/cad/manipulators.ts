@@ -21,6 +21,7 @@ import {
     buildOpeningGeometry,
     clampOpeningParameter,
     openingSize,
+    resizeOpening,
 } from '@/lib/cad/model';
 import type { WallGeometry } from '@/lib/cad/model';
 import type {
@@ -46,6 +47,8 @@ export type Grip =
     | { kind: 'lineEnd'; elementId: string; end: 'a' | 'b'; point: Point }
     | { kind: 'floorVertex'; elementId: string; index: number; point: Point }
     | { kind: 'openingSlide'; elementId: string; point: Point }
+    /** Drag a jamb to widen or narrow the opening; the other jamb holds. */
+    | { kind: 'openingJamb'; elementId: string; end: 'a' | 'b'; point: Point }
     | { kind: 'dimensionOffset'; elementId: string; point: Point }
     | { kind: 'move'; elementId: string; point: Point };
 
@@ -93,6 +96,11 @@ export function gripsFor(
     const grips: Grip[] = [];
 
     selectedElements(document, selection).forEach((element) => {
+        // A pinned element offers nothing to drag — that is what the pin is.
+        if (element.pinned) {
+            return;
+        }
+
         switch (element.kind) {
             case 'wall':
                 grips.push(
@@ -136,6 +144,10 @@ export function gripsFor(
             case 'floor':
             case 'roof':
             case 'ceiling':
+            case 'pad':
+            case 'toposurface':
+            case 'propertyLine':
+            case 'walkthrough':
                 element.points.forEach((point, index) =>
                     grips.push({
                         kind: 'floorVertex',
@@ -148,6 +160,11 @@ export function gripsFor(
             case 'stair':
             case 'grid':
             case 'beam':
+            case 'railing':
+            case 'brace':
+            case 'duct':
+            case 'pipe':
+            case 'cableTray':
                 (['a', 'b'] as const).forEach((end) =>
                     grips.push({
                         kind: 'lineEnd',
@@ -162,12 +179,31 @@ export function gripsFor(
                 const host = geometry.get(element.host);
 
                 if (host) {
-                    grips.push({
-                        kind: 'openingSlide',
-                        elementId: element.id,
-                        point: buildOpeningGeometry(document, element, host)
-                            .center,
-                    });
+                    const opening = buildOpeningGeometry(
+                        document,
+                        element,
+                        host,
+                    );
+
+                    grips.push(
+                        {
+                            kind: 'openingSlide',
+                            elementId: element.id,
+                            point: opening.center,
+                        },
+                        {
+                            kind: 'openingJamb',
+                            elementId: element.id,
+                            end: 'a',
+                            point: opening.jambA,
+                        },
+                        {
+                            kind: 'openingJamb',
+                            elementId: element.id,
+                            end: 'b',
+                            point: opening.jambB,
+                        },
+                    );
                 }
 
                 break;
@@ -175,6 +211,9 @@ export function gripsFor(
             case 'column':
             case 'text':
             case 'room':
+            case 'footing':
+            case 'fixture':
+            case 'spotElevation':
                 grips.push({
                     kind: 'move',
                     elementId: element.id,
@@ -209,7 +248,7 @@ export function applyGrip(
     return {
         ...document,
         elements: document.elements.map((element) => {
-            if (element.id !== grip.elementId) {
+            if (element.id !== grip.elementId || element.pinned) {
                 return element;
             }
 
@@ -269,6 +308,37 @@ export function applyGrip(
                             t,
                         ),
                     };
+                }
+                case 'openingJamb': {
+                    const opening = element as OpeningElement;
+                    const host = geometry.get(opening.host);
+
+                    if (!host) {
+                        return element;
+                    }
+
+                    const current = buildOpeningGeometry(
+                        document,
+                        opening,
+                        host,
+                    );
+
+                    // Width is read off the jamb you are not holding, so the
+                    // opening grows away from the fixed side.
+                    const fixed =
+                        grip.end === 'a' ? current.jambB : current.jambA;
+                    const along = subtract(target, fixed);
+
+                    return resizeOpening(
+                        opening,
+                        current.width,
+                        host.length,
+                        Math.abs(
+                            along.x * host.direction.x +
+                                along.y * host.direction.y,
+                        ),
+                        grip.end === 'a' ? 'b' : 'a',
+                    );
                 }
                 case 'move':
                     return { ...element, p: target } as CadElement;
@@ -336,7 +406,8 @@ export function temporaryDimensionsFor(
 
     const element = document.elements.find((item) => item.id === selection[0]);
 
-    if (!element) {
+    // A pinned element's dimensions would be editable lies, so none appear.
+    if (!element || element.pinned) {
         return [];
     }
 
@@ -414,9 +485,33 @@ function openingDimensions(
         }),
     });
 
+    // Sits on the opposite side of the wall from the two position dimensions,
+    // so an opening reports where it is and how big it is at the same time.
+    const widthDimension: TemporaryDimension = {
+        id: `${opening.id}:width`,
+        a: geometry.jambA,
+        b: geometry.jambB,
+        offset: -500,
+        value: width,
+        apply: (current, next) => ({
+            ...current,
+            elements: current.elements.map((element) =>
+                element.id === opening.id
+                    ? resizeOpening(
+                          element as OpeningElement,
+                          width,
+                          host.length,
+                          next,
+                      )
+                    : element,
+            ),
+        }),
+    };
+
     return [
         build('a', host.a, distance(host.a, centre)),
         build('b', host.b, distance(host.b, centre)),
+        widthDimension,
     ];
 }
 

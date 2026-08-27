@@ -1,6 +1,17 @@
 import { Magnet, MoveHorizontal } from 'lucide-react';
 import type { CadEditor } from '@/hooks/use-cad-editor';
-import type { DrawMode, LocationLine } from '@/lib/cad/types';
+import {
+    DUCT_SYSTEM_LABELS,
+    FIXTURE_CATEGORY_LABELS,
+    PIPE_SYSTEM_LABELS,
+} from '@/lib/cad/model';
+import type {
+    DrawMode,
+    DuctSystem,
+    FixtureCategory,
+    LocationLine,
+    PipeSystem,
+} from '@/lib/cad/types';
 import { formatLength, parseLength } from '@/lib/cad/units';
 import { cn } from '@/lib/utils';
 
@@ -156,6 +167,99 @@ export function OptionsBar({ editor }: { editor: CadEditor }) {
                 </>
             )}
 
+            {tool === 'duct' && (
+                <>
+                    <Field label="System">
+                        <Select
+                            value={editor.ductSystem}
+                            onChange={(value) =>
+                                editor.setDuctSystem(value as DuctSystem)
+                            }
+                            options={Object.entries(DUCT_SYSTEM_LABELS).map(
+                                ([value, label]) => ({ value, label }),
+                            )}
+                        />
+                    </Field>
+                    <Field label="Width">
+                        <LengthInput
+                            value={editor.ductWidth}
+                            units={document.units}
+                            onCommit={editor.setDuctWidth}
+                        />
+                    </Field>
+                    <Field label="Elevation">
+                        <LengthInput
+                            value={editor.mepElevation}
+                            units={document.units}
+                            onCommit={editor.setMepElevation}
+                        />
+                    </Field>
+                </>
+            )}
+
+            {tool === 'pipe' && (
+                <>
+                    <Field label="System">
+                        <Select
+                            value={editor.pipeSystem}
+                            onChange={(value) =>
+                                editor.setPipeSystem(value as PipeSystem)
+                            }
+                            options={Object.entries(PIPE_SYSTEM_LABELS).map(
+                                ([value, label]) => ({ value, label }),
+                            )}
+                        />
+                    </Field>
+                    <Field label="Diameter">
+                        <LengthInput
+                            value={editor.pipeDiameter}
+                            units={document.units}
+                            onCommit={editor.setPipeDiameter}
+                        />
+                    </Field>
+                    <Field label="Elevation">
+                        <LengthInput
+                            value={editor.mepElevation}
+                            units={document.units}
+                            onCommit={editor.setMepElevation}
+                        />
+                    </Field>
+                </>
+            )}
+
+            {tool === 'cableTray' && (
+                <>
+                    <Field label="Width">
+                        <LengthInput
+                            value={editor.trayWidth}
+                            units={document.units}
+                            onCommit={editor.setTrayWidth}
+                        />
+                    </Field>
+                    <Field label="Elevation">
+                        <LengthInput
+                            value={editor.mepElevation}
+                            units={document.units}
+                            onCommit={editor.setMepElevation}
+                        />
+                    </Field>
+                </>
+            )}
+
+            {tool === 'fixture' && (
+                <Field label="Category">
+                    <Select
+                        value={editor.fixtureCategory}
+                        onChange={(value) =>
+                            editor.setFixtureCategory(value as FixtureCategory)
+                        }
+                        options={Object.entries(FIXTURE_CATEGORY_LABELS).map(
+                            ([value, label]) => ({ value, label }),
+                        )}
+                    />
+                </Field>
+            )}
+
             {tool === 'offset' && (
                 <Field label="Offset">
                     <LengthInput
@@ -189,7 +293,15 @@ export function OptionsBar({ editor }: { editor: CadEditor }) {
                 tool === 'trim' ||
                 tool === 'split' ||
                 tool === 'align' ||
-                tool === 'measure') && (
+                tool === 'measure' ||
+                tool === 'railing' ||
+                tool === 'brace' ||
+                tool === 'footing' ||
+                tool === 'pad' ||
+                tool === 'toposurface' ||
+                tool === 'propertyLine' ||
+                tool === 'spotElevation' ||
+                tool === 'walkthrough') && (
                 <span className="text-chrome-muted">{hintFor(tool)}</span>
             )}
 
@@ -249,6 +361,17 @@ function hintFor(tool: string): string {
             'Sketch around the changed work — close it or press Enter to finish',
         section:
             'Pick two points across the building; the view lands in the browser',
+        railing: 'Pick two points along the run — posts space themselves',
+        brace: 'Pick two points; the brace climbs to the level above',
+        footing: 'Click to place a pad footing below the level',
+        pad: 'Sketch the pad boundary — close it or press Enter to finish',
+        toposurface:
+            'Sketch the ground boundary — close it or press Enter to finish',
+        propertyLine:
+            'Sketch the legal boundary — close it or press Enter to finish',
+        spotElevation: 'Click to mark the level height at a point',
+        walkthrough:
+            'Click the camera route through the plan — press Enter to finish, then Play Tour',
     };
 
     return hints[tool] ?? '';

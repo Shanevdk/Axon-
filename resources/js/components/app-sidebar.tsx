@@ -1,5 +1,15 @@
 import { Link, usePage } from '@inertiajs/react';
-import { Box, Building2, LayoutGrid, Sparkles, Users } from 'lucide-react';
+import {
+    Armchair,
+    Box,
+    Building2,
+    CalendarDays,
+    LayoutGrid,
+    MessagesSquare,
+    NotebookPen,
+    Sparkles,
+    Users,
+} from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
@@ -12,8 +22,10 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { assistant, dashboard } from '@/routes';
+import { assistant, calendar, chat, dashboard } from '@/routes';
 import { index as clients } from '@/routes/clients';
+import { index as library } from '@/routes/library';
+import { index as notes } from '@/routes/notes';
 import { show as organization } from '@/routes/organization';
 import { index as projects } from '@/routes/projects';
 import type { NavItem } from '@/types';
@@ -36,6 +48,26 @@ export function AppSidebar() {
             title: 'Clients',
             href: clients(),
             icon: Users,
+        },
+        {
+            title: 'Library',
+            href: library(),
+            icon: Armchair,
+        },
+        {
+            title: 'Notebook',
+            href: notes(),
+            icon: NotebookPen,
+        },
+        {
+            title: 'Calendar',
+            href: calendar(),
+            icon: CalendarDays,
+        },
+        {
+            title: 'Chat',
+            href: chat(),
+            icon: MessagesSquare,
         },
         {
             title: 'Assistant',

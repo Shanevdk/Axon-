@@ -1,36 +1,55 @@
 import {
+    AirVent,
     AppWindow,
+    Armchair,
+    ArrowDownToLine,
     Baseline,
     Blinds,
     Box,
     BoxSelect,
     BrickWall,
+    Cable,
     Camera,
+    Car,
+    CloudDrizzle,
     HardDriveDownload,
     Columns3,
     Compass,
     Construction,
     Copy,
+    CopyPlus,
+    Crosshair,
     DoorOpen,
+    Droplets,
     Eye,
     EyeOff,
+    Fan,
+    Fence,
     FileUp,
+    Footprints,
     FlipHorizontal2,
     Focus,
     Grid2x2,
     Grid3x3,
     Home,
     Info,
+    LandPlot,
     Layers,
+    Lightbulb,
     Magnet,
     MessageCircle,
+    Mountain,
     Move3d,
     Maximize,
     MousePointer2,
     Move,
+    MoveUpRight,
     PackageCheck,
     PackageOpen,
     PenLine,
+    PersonStanding,
+    Play,
+    RectangleHorizontal,
     Redo2,
     Route,
     RotateCw,
@@ -38,7 +57,15 @@ import {
     Save,
     Scan,
     Scissors,
+    Pin,
+    PinOff,
+    Pipette,
+    Recycle,
     Settings2,
+    ShieldQuestion,
+    ShowerHead,
+    TriangleAlert,
+    Wand2,
     Spline,
     Square,
     SquareStack,
@@ -47,11 +74,14 @@ import {
     Table2,
     TrainTrack,
     Trash2,
+    TreeDeciduous,
     Type,
     Undo2,
+    Wind,
+    Zap,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { ToolId } from '@/lib/cad/types';
+import type { FixtureCategory, ToolId } from '@/lib/cad/types';
 
 export type CommandId =
     | 'undo'
@@ -68,10 +98,20 @@ export type CommandId =
     | 'exportTypes'
     | 'export'
     | 'render'
+    | 'askAssistant'
+    | 'pinSelection'
+    | 'unpinSelection'
+    | 'createSimilar'
+    | 'matchType'
+    | 'reviewWarnings'
+    | 'purgeUnused'
+    | 'cleanUpModel'
+    | 'openLibrary'
     | 'downloadDrawing'
     | 'hideElement'
     | 'isolateElement'
     | 'resetHideIsolate'
+    | 'playTour'
     | 'selectAll'
     | 'styleWireframe'
     | 'styleHiddenLine'
@@ -88,10 +128,16 @@ export type ToggleId =
     | 'cropView'
     | 'showCrop'
     | 'shadows'
-    | 'revealHidden';
+    | 'revealHidden'
+    | 'walkMode';
 
 export type RibbonAction =
-    | { kind: 'tool'; tool: ToolId }
+    | {
+          kind: 'tool';
+          tool: ToolId;
+          /** Component category the fixture tool arms with, when set. */
+          fixture?: FixtureCategory;
+      }
     | { kind: 'command'; command: CommandId }
     | { kind: 'toggle'; setting: ToggleId };
 
@@ -207,6 +253,28 @@ export const RIBBON_TABS: RibbonTab[] = [
                         shortcut: 'RA',
                         hint: 'Sloped run between two points',
                     },
+                    {
+                        id: 'railing',
+                        label: 'Railing',
+                        icon: Fence,
+                        action: { kind: 'tool', tool: 'railing' },
+                        size: 'small',
+                        shortcut: 'RL',
+                        hint: 'Guardrail between two points — posts are automatic',
+                    },
+                    {
+                        id: 'component',
+                        label: 'Component',
+                        icon: Armchair,
+                        action: {
+                            kind: 'tool',
+                            tool: 'fixture',
+                            fixture: 'furniture',
+                        },
+                        size: 'small',
+                        shortcut: 'CM',
+                        hint: 'Place furniture or another loadable component',
+                    },
                 ],
             },
             {
@@ -309,6 +377,15 @@ export const RIBBON_TABS: RibbonTab[] = [
                         hint: 'Structural framing between two supports at plate height',
                     },
                     {
+                        id: 'brace',
+                        label: 'Brace',
+                        icon: MoveUpRight,
+                        action: { kind: 'tool', tool: 'brace' },
+                        size: 'large',
+                        shortcut: 'BR',
+                        hint: 'Diagonal member climbing to the level above',
+                    },
+                    {
                         id: 'structural-grid',
                         label: 'Grid',
                         icon: Grid2x2,
@@ -316,6 +393,21 @@ export const RIBBON_TABS: RibbonTab[] = [
                         size: 'large',
                         shortcut: 'GL',
                         hint: 'Datum line with a bubble at each end',
+                    },
+                ],
+            },
+            {
+                id: 'foundation',
+                title: 'Foundation',
+                buttons: [
+                    {
+                        id: 'footing',
+                        label: 'Isolated',
+                        icon: ArrowDownToLine,
+                        action: { kind: 'tool', tool: 'footing' },
+                        size: 'large',
+                        shortcut: 'FT',
+                        hint: 'Pad footing spreading below the level',
                     },
                 ],
             },
@@ -329,6 +421,135 @@ export const RIBBON_TABS: RibbonTab[] = [
                         icon: Box,
                         action: { kind: 'command', command: 'openThreeD' },
                         size: 'large',
+                    },
+                ],
+            },
+        ],
+    },
+    {
+        id: 'systems',
+        title: 'Systems',
+        panels: [
+            {
+                id: 'hvac',
+                title: 'HVAC',
+                buttons: [
+                    {
+                        id: 'duct',
+                        label: 'Duct',
+                        icon: Wind,
+                        action: { kind: 'tool', tool: 'duct' },
+                        size: 'large',
+                        shortcut: 'DT',
+                        hint: 'Rectangular duct run between two points',
+                    },
+                    {
+                        id: 'air-terminal',
+                        label: 'Air Terminal',
+                        icon: AirVent,
+                        action: {
+                            kind: 'tool',
+                            tool: 'fixture',
+                            fixture: 'airTerminal',
+                        },
+                        size: 'small',
+                        shortcut: 'AT',
+                        hint: 'Ceiling diffuser or grille',
+                    },
+                    {
+                        id: 'mechanical-equipment',
+                        label: 'Equipment',
+                        icon: Fan,
+                        action: {
+                            kind: 'tool',
+                            tool: 'fixture',
+                            fixture: 'mechanical',
+                        },
+                        size: 'small',
+                        shortcut: 'ME',
+                        hint: 'Air handler, fan or other mechanical equipment',
+                    },
+                ],
+            },
+            {
+                id: 'plumbing',
+                title: 'Plumbing',
+                buttons: [
+                    {
+                        id: 'pipe',
+                        label: 'Pipe',
+                        icon: Droplets,
+                        action: { kind: 'tool', tool: 'pipe' },
+                        size: 'large',
+                        shortcut: 'PP',
+                        hint: 'Pipe run between two points, coloured by system',
+                    },
+                    {
+                        id: 'plumbing-fixture',
+                        label: 'Fixture',
+                        icon: ShowerHead,
+                        action: {
+                            kind: 'tool',
+                            tool: 'fixture',
+                            fixture: 'plumbing',
+                        },
+                        size: 'small',
+                        shortcut: 'PF',
+                        hint: 'Basin, WC or other plumbing fixture',
+                    },
+                    {
+                        id: 'sprinkler',
+                        label: 'Sprinkler',
+                        icon: CloudDrizzle,
+                        action: {
+                            kind: 'tool',
+                            tool: 'fixture',
+                            fixture: 'sprinkler',
+                        },
+                        size: 'small',
+                        shortcut: 'SK',
+                        hint: 'Sprinkler head at the ceiling',
+                    },
+                ],
+            },
+            {
+                id: 'electrical',
+                title: 'Electrical',
+                buttons: [
+                    {
+                        id: 'cable-tray',
+                        label: 'Cable Tray',
+                        icon: Cable,
+                        action: { kind: 'tool', tool: 'cableTray' },
+                        size: 'large',
+                        shortcut: 'CT',
+                        hint: 'Ladder tray run between two points',
+                    },
+                    {
+                        id: 'lighting-fixture',
+                        label: 'Lighting',
+                        icon: Lightbulb,
+                        action: {
+                            kind: 'tool',
+                            tool: 'fixture',
+                            fixture: 'lighting',
+                        },
+                        size: 'small',
+                        shortcut: 'LF',
+                        hint: 'Luminaire at the ceiling',
+                    },
+                    {
+                        id: 'electrical-panel',
+                        label: 'Panel',
+                        icon: Zap,
+                        action: {
+                            kind: 'tool',
+                            tool: 'fixture',
+                            fixture: 'electrical',
+                        },
+                        size: 'small',
+                        shortcut: 'PB',
+                        hint: 'Panelboard or other electrical equipment',
                     },
                 ],
             },
@@ -358,6 +579,15 @@ export const RIBBON_TABS: RibbonTab[] = [
                         action: { kind: 'tool', tool: 'measure' },
                         size: 'small',
                         shortcut: 'MS',
+                    },
+                    {
+                        id: 'spot-elevation',
+                        label: 'Spot Elev',
+                        icon: Crosshair,
+                        action: { kind: 'tool', tool: 'spotElevation' },
+                        size: 'small',
+                        shortcut: 'SP',
+                        hint: 'Target reporting the level height at a point',
                     },
                 ],
             },
@@ -389,6 +619,89 @@ export const RIBBON_TABS: RibbonTab[] = [
                         size: 'small',
                         shortcut: 'RC',
                         hint: 'Sketch around changed work; close it to finish',
+                    },
+                ],
+            },
+        ],
+    },
+    {
+        id: 'site',
+        title: 'Massing & Site',
+        panels: [
+            {
+                id: 'model-site',
+                title: 'Model Site',
+                buttons: [
+                    {
+                        id: 'toposurface',
+                        label: 'Toposurface',
+                        icon: Mountain,
+                        action: { kind: 'tool', tool: 'toposurface' },
+                        size: 'large',
+                        shortcut: 'TS',
+                        hint: 'Sketch the site ground — close it to finish',
+                    },
+                    {
+                        id: 'building-pad',
+                        label: 'Pad',
+                        icon: RectangleHorizontal,
+                        action: { kind: 'tool', tool: 'pad' },
+                        size: 'small',
+                        shortcut: 'PD',
+                        hint: 'Building pad cut into the site',
+                    },
+                    {
+                        id: 'property-line',
+                        label: 'Property Line',
+                        icon: LandPlot,
+                        action: { kind: 'tool', tool: 'propertyLine' },
+                        size: 'small',
+                        shortcut: 'PL',
+                        hint: 'Sketch the legal boundary of the site',
+                    },
+                ],
+            },
+            {
+                id: 'site-components',
+                title: 'Site Components',
+                buttons: [
+                    {
+                        id: 'planting',
+                        label: 'Planting',
+                        icon: TreeDeciduous,
+                        action: {
+                            kind: 'tool',
+                            tool: 'fixture',
+                            fixture: 'planting',
+                        },
+                        size: 'large',
+                        shortcut: 'PT',
+                        hint: 'Place a tree — canopy and trunk are automatic',
+                    },
+                    {
+                        id: 'parking',
+                        label: 'Parking',
+                        icon: Car,
+                        action: {
+                            kind: 'tool',
+                            tool: 'fixture',
+                            fixture: 'parking',
+                        },
+                        size: 'small',
+                        shortcut: 'PK',
+                        hint: 'Parking stall, open at the aisle end',
+                    },
+                    {
+                        id: 'site-component',
+                        label: 'Component',
+                        icon: Armchair,
+                        action: {
+                            kind: 'tool',
+                            tool: 'fixture',
+                            fixture: 'furniture',
+                        },
+                        size: 'small',
+                        hint: 'Site furniture or another placed component',
                     },
                 ],
             },
@@ -492,6 +805,41 @@ export const RIBBON_TABS: RibbonTab[] = [
                         size: 'small',
                         shortcut: 'AR',
                         hint: 'Copy the selection at even spacing along a picked step',
+                    },
+                    {
+                        id: 'pin',
+                        label: 'Pin',
+                        icon: Pin,
+                        action: { kind: 'command', command: 'pinSelection' },
+                        size: 'small',
+                        shortcut: 'PN',
+                        hint: 'Pin the selection so nothing can move it',
+                    },
+                    {
+                        id: 'unpin',
+                        label: 'Unpin',
+                        icon: PinOff,
+                        action: { kind: 'command', command: 'unpinSelection' },
+                        size: 'small',
+                        shortcut: 'UP',
+                    },
+                    {
+                        id: 'match-type',
+                        label: 'Match',
+                        icon: Pipette,
+                        action: { kind: 'command', command: 'matchType' },
+                        size: 'small',
+                        shortcut: 'MT',
+                        hint: 'Give every selected element the first one’s type',
+                    },
+                    {
+                        id: 'create-similar',
+                        label: 'Similar',
+                        icon: CopyPlus,
+                        action: { kind: 'command', command: 'createSimilar' },
+                        size: 'small',
+                        shortcut: 'CS',
+                        hint: 'Arm the tool that places more like the selection',
                     },
                     {
                         id: 'delete',
@@ -610,6 +958,39 @@ export const RIBBON_TABS: RibbonTab[] = [
                     },
                 ],
             },
+            {
+                id: 'walkthrough-panel',
+                title: 'Walkthrough',
+                buttons: [
+                    {
+                        id: 'first-person',
+                        label: 'First Person',
+                        icon: PersonStanding,
+                        action: { kind: 'toggle', setting: 'walkMode' },
+                        size: 'large',
+                        shortcut: 'FP',
+                        hint: 'Walk the model at eye height — WASD to move, drag to look, Esc to exit',
+                    },
+                    {
+                        id: 'walkthrough',
+                        label: 'Path',
+                        icon: Footprints,
+                        action: { kind: 'tool', tool: 'walkthrough' },
+                        size: 'small',
+                        shortcut: 'WT',
+                        hint: 'Sketch a camera path in plan; press Enter to finish',
+                    },
+                    {
+                        id: 'play-tour',
+                        label: 'Play Tour',
+                        icon: Play,
+                        action: { kind: 'command', command: 'playTour' },
+                        size: 'small',
+                        shortcut: 'PW',
+                        hint: 'Walk the camera along the walkthrough path',
+                    },
+                ],
+            },
         ],
     },
     {
@@ -620,6 +1001,15 @@ export const RIBBON_TABS: RibbonTab[] = [
                 id: 'import',
                 title: 'Import',
                 buttons: [
+                    {
+                        id: 'open-library',
+                        label: 'Library',
+                        icon: Armchair,
+                        action: { kind: 'command', command: 'openLibrary' },
+                        size: 'large',
+                        shortcut: 'LB',
+                        hint: 'Place a couch, a table, anything the studio has shelved',
+                    },
                     {
                         id: 'import-file',
                         label: 'Import',
@@ -687,6 +1077,14 @@ export const RIBBON_TABS: RibbonTab[] = [
                         size: 'large',
                         hint: 'Photograph the design — a brief measured off the model, sent to an image generator',
                     },
+                    {
+                        id: 'ask-assistant',
+                        label: 'Ask',
+                        icon: ShieldQuestion,
+                        action: { kind: 'command', command: 'askAssistant' },
+                        size: 'large',
+                        hint: 'Ask about this building, and about the fire and building code where it is being built',
+                    },
                 ],
             },
         ],
@@ -712,6 +1110,38 @@ export const RIBBON_TABS: RibbonTab[] = [
                         icon: Settings2,
                         action: { kind: 'command', command: 'projectInfo' },
                         size: 'small',
+                    },
+                ],
+            },
+            {
+                id: 'inquiry',
+                title: 'Inquiry',
+                buttons: [
+                    {
+                        id: 'review-warnings',
+                        label: 'Warnings',
+                        icon: TriangleAlert,
+                        action: { kind: 'command', command: 'reviewWarnings' },
+                        size: 'large',
+                        shortcut: 'WR',
+                        hint: 'Review everything the model quietly disagrees with',
+                    },
+                    {
+                        id: 'clean-up-model',
+                        label: 'Clean Up',
+                        icon: Wand2,
+                        action: { kind: 'command', command: 'cleanUpModel' },
+                        size: 'large',
+                        shortcut: 'CX',
+                        hint: 'Fix rough edges — close open corners, square slipped walls, remove slivers and duplicates',
+                    },
+                    {
+                        id: 'purge-unused',
+                        label: 'Purge',
+                        icon: Recycle,
+                        action: { kind: 'command', command: 'purgeUnused' },
+                        size: 'small',
+                        hint: 'Drop wall, door and window types nothing uses',
                     },
                 ],
             },
@@ -754,19 +1184,56 @@ export const SHORTCUTS: Record<string, RibbonAction> = {
     gl: { kind: 'tool', tool: 'grid' },
     bm: { kind: 'tool', tool: 'beam' },
     ra: { kind: 'tool', tool: 'ramp' },
+    rl: { kind: 'tool', tool: 'railing' },
     rp: { kind: 'tool', tool: 'referencePlane' },
     rc: { kind: 'tool', tool: 'revisionCloud' },
     se: { kind: 'tool', tool: 'section' },
+    cm: { kind: 'tool', tool: 'fixture', fixture: 'furniture' },
+
+    // Structure
+    br: { kind: 'tool', tool: 'brace' },
+    ft: { kind: 'tool', tool: 'footing' },
+
+    // Systems
+    dt: { kind: 'tool', tool: 'duct' },
+    at: { kind: 'tool', tool: 'fixture', fixture: 'airTerminal' },
+    me: { kind: 'tool', tool: 'fixture', fixture: 'mechanical' },
+    pp: { kind: 'tool', tool: 'pipe' },
+    pf: { kind: 'tool', tool: 'fixture', fixture: 'plumbing' },
+    sk: { kind: 'tool', tool: 'fixture', fixture: 'sprinkler' },
+    ct: { kind: 'tool', tool: 'cableTray' },
+    lf: { kind: 'tool', tool: 'fixture', fixture: 'lighting' },
+    pb: { kind: 'tool', tool: 'fixture', fixture: 'electrical' },
+
+    // Massing & Site
+    ts: { kind: 'tool', tool: 'toposurface' },
+    pd: { kind: 'tool', tool: 'pad' },
+    pl: { kind: 'tool', tool: 'propertyLine' },
+    pt: { kind: 'tool', tool: 'fixture', fixture: 'planting' },
+    pk: { kind: 'tool', tool: 'fixture', fixture: 'parking' },
+
+    // Walkthrough
+    wt: { kind: 'tool', tool: 'walkthrough' },
+    fp: { kind: 'toggle', setting: 'walkMode' },
+    pw: { kind: 'command', command: 'playTour' },
 
     // Annotate
     di: { kind: 'tool', tool: 'dimension' },
     tx: { kind: 'tool', tool: 'text' },
     dl: { kind: 'tool', tool: 'line' },
     ms: { kind: 'tool', tool: 'measure' },
+    sp: { kind: 'tool', tool: 'spotElevation' },
 
     // Modify
     md: { kind: 'tool', tool: 'select' },
     mv: { kind: 'tool', tool: 'move' },
+    pn: { kind: 'command', command: 'pinSelection' },
+    up: { kind: 'command', command: 'unpinSelection' },
+    mt: { kind: 'command', command: 'matchType' },
+    cs: { kind: 'command', command: 'createSimilar' },
+    wr: { kind: 'command', command: 'reviewWarnings' },
+    cx: { kind: 'command', command: 'cleanUpModel' },
+    lb: { kind: 'command', command: 'openLibrary' },
     co: { kind: 'tool', tool: 'copy' },
     cc: { kind: 'tool', tool: 'copy' },
     ro: { kind: 'tool', tool: 'rotate' },

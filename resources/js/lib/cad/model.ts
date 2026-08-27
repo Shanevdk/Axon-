@@ -8,6 +8,7 @@ import {
     pointInPolygon,
     polygonArea,
     projectOnSegment,
+    rectCorners,
     rotate,
     scale,
     subtract,
@@ -16,11 +17,16 @@ import type {
     CadDocument,
     CadElement,
     DoorType,
+    DuctSystem,
     ElementKind,
+    FixtureCategory,
+    FixtureElement,
     FloorElement,
     OpeningElement,
+    PipeSystem,
     Point,
     RoomElement,
+    ToolId,
     WallElement,
     WallType,
     WindowType,
@@ -82,6 +88,34 @@ export function openingSize(
     if (opening.kind === 'door') {
         const type = doorTypeOf(document, opening.typeId);
 
+        return {
+            width: opening.width ?? type.width,
+            height: opening.height ?? type.height,
+            sillHeight: 0,
+        };
+    }
+
+    const type = windowTypeOf(document, opening.typeId);
+
+    return {
+        width: opening.width ?? type.width,
+        height: opening.height ?? type.height,
+        sillHeight: opening.sillHeight ?? type.sillHeight,
+    };
+}
+
+/**
+ * The size the opening's type would give it, ignoring any instance override.
+ * The properties palette shows this so you can see what you have departed
+ * from, and reset back to it.
+ */
+export function openingTypeSize(
+    document: CadDocument,
+    opening: OpeningElement,
+): { width: number; height: number; sillHeight: number } {
+    if (opening.kind === 'door') {
+        const type = doorTypeOf(document, opening.typeId);
+
         return { width: type.width, height: type.height, sillHeight: 0 };
     }
 
@@ -93,6 +127,176 @@ export function openingSize(
         sillHeight: type.sillHeight,
     };
 }
+
+/**
+ * Whether this opening has been resized away from its type.
+ */
+export function openingIsResized(opening: OpeningElement): boolean {
+    return (
+        opening.width !== undefined ||
+        opening.height !== undefined ||
+        (opening.kind === 'window' && opening.sillHeight !== undefined)
+    );
+}
+
+/** Nothing narrower than this is a door or a window. */
+export const MIN_OPENING_WIDTH = 150;
+
+/** Nor anything shorter. */
+export const MIN_OPENING_HEIGHT = 150;
+
+/** How much wall has to survive past each jamb. */
+export const OPENING_END_MARGIN = 50;
+
+/**
+ * The widest an opening may be inside its host: a jamb has to stop short of
+ * each end or the wall stops being a wall.
+ */
+export function maxOpeningWidth(wallLength: number): number {
+    return Math.max(MIN_OPENING_WIDTH, wallLength - 2 * OPENING_END_MARGIN);
+}
+
+/**
+ * Resize an opening, keeping it inside its host and keeping the jamb you were
+ * not dragging where it was.
+ *
+ * `anchor` says which edge holds still: 'a' pins the jamb nearer the wall's
+ * start, 'b' the far one, and 'center' grows it evenly about its middle.
+ */
+export function resizeOpening(
+    opening: OpeningElement,
+    currentWidth: number,
+    wallLength: number,
+    requestedWidth: number,
+    anchor: 'a' | 'b' | 'center' = 'center',
+): OpeningElement {
+    const width = Math.min(
+        maxOpeningWidth(wallLength),
+        Math.max(MIN_OPENING_WIDTH, requestedWidth),
+    );
+
+    if (anchor === 'center' || wallLength <= 0) {
+        return {
+            ...opening,
+            width,
+            t: clampOpeningParameter(width, wallLength, opening.t),
+        };
+    }
+
+    // Hold one jamb still by walking the centre half the change the other way.
+    const shift = (width - currentWidth) / 2 / wallLength;
+    const t = anchor === 'a' ? opening.t + shift : opening.t - shift;
+
+    return {
+        ...opening,
+        width,
+        t: clampOpeningParameter(width, wallLength, t),
+    };
+}
+
+export type FixturePreset = {
+    name: string;
+    width: number;
+    depth: number;
+    height: number;
+    /** Height of the underside above the level, in millimetres. */
+    elevation: number;
+};
+
+/**
+ * The stand-in family catalogue: what each component category places until a
+ * real type is chosen. Ceiling-hung categories carry their mounting height.
+ */
+export const FIXTURE_PRESETS: Record<FixtureCategory, FixturePreset> = {
+    mechanical: {
+        name: 'Air Handling Unit',
+        width: 1500,
+        depth: 900,
+        height: 1400,
+        elevation: 0,
+    },
+    airTerminal: {
+        name: 'Supply Diffuser',
+        width: 600,
+        depth: 600,
+        height: 250,
+        elevation: 2450,
+    },
+    lighting: {
+        name: 'Luminaire',
+        width: 600,
+        depth: 600,
+        height: 100,
+        elevation: 2600,
+    },
+    electrical: {
+        name: 'Panelboard',
+        width: 600,
+        depth: 150,
+        height: 900,
+        elevation: 1200,
+    },
+    plumbing: {
+        name: 'Plumbing Fixture',
+        width: 700,
+        depth: 450,
+        height: 400,
+        elevation: 0,
+    },
+    sprinkler: {
+        name: 'Sprinkler',
+        width: 150,
+        depth: 150,
+        height: 100,
+        elevation: 2600,
+    },
+    furniture: {
+        name: 'Furniture',
+        width: 1200,
+        depth: 600,
+        height: 750,
+        elevation: 0,
+    },
+    planting: {
+        name: 'Deciduous Tree',
+        width: 3500,
+        depth: 3500,
+        height: 6000,
+        elevation: 0,
+    },
+    parking: {
+        name: 'Parking Stall',
+        width: 2600,
+        depth: 5500,
+        height: 20,
+        elevation: 0,
+    },
+};
+
+export const FIXTURE_CATEGORY_LABELS: Record<FixtureCategory, string> = {
+    mechanical: 'Mechanical Equipment',
+    airTerminal: 'Air Terminals',
+    lighting: 'Lighting Fixtures',
+    electrical: 'Electrical Equipment',
+    plumbing: 'Plumbing Fixtures',
+    sprinkler: 'Sprinklers',
+    furniture: 'Furniture',
+    planting: 'Planting',
+    parking: 'Parking',
+};
+
+export const DUCT_SYSTEM_LABELS: Record<DuctSystem, string> = {
+    supply: 'Supply Air',
+    return: 'Return Air',
+    exhaust: 'Exhaust Air',
+};
+
+export const PIPE_SYSTEM_LABELS: Record<PipeSystem, string> = {
+    domestic: 'Domestic Water',
+    sanitary: 'Sanitary',
+    hydronic: 'Hydronic',
+    fire: 'Fire Protection',
+};
 
 export type WallGeometry = {
     wall: WallElement;
@@ -333,24 +537,36 @@ export function findWall(
 
 const HIT_PRIORITY: Record<ElementKind, number> = {
     text: 0,
+    spotElevation: 0,
     dimension: 1,
     grid: 1,
     referencePlane: 1,
     section: 1,
     revisionCloud: 1,
+    propertyLine: 1,
+    walkthrough: 1,
     door: 2,
     window: 2,
     column: 3,
     stair: 3,
     ramp: 3,
+    footing: 3,
+    fixture: 3,
     beam: 4,
+    brace: 4,
+    railing: 4,
+    duct: 4,
+    pipe: 4,
+    cableTray: 4,
     room: 4,
     wall: 5,
     mesh: 6,
     line: 7,
     floor: 8,
     ceiling: 8,
+    pad: 8,
     roof: 9,
+    toposurface: 10,
 };
 
 /**
@@ -470,11 +686,68 @@ function elementContainsPoint(
             return pointInPolygon(world, element.footprint);
         case 'dimension':
         case 'line':
+        case 'railing':
             return (
                 projectOnSegment(world, element.a, element.b).distance <=
                 tolerance
             );
+        case 'brace':
+            return (
+                projectOnSegment(world, element.a, element.b).distance <=
+                Math.max(element.width / 2, tolerance)
+            );
+        case 'duct':
+        case 'cableTray':
+            return (
+                projectOnSegment(world, element.a, element.b).distance <=
+                element.width / 2 + tolerance
+            );
+        case 'pipe':
+            return (
+                projectOnSegment(world, element.a, element.b).distance <=
+                Math.max(element.diameter / 2, tolerance)
+            );
+        case 'footing': {
+            const half = element.width / 2;
+
+            return (
+                Math.abs(world.x - element.p.x) <= half &&
+                Math.abs(world.y - element.p.y) <= half
+            );
+        }
+        case 'fixture': {
+            const local = rotate(world, -element.rotation, element.p);
+
+            return (
+                Math.abs(local.x - element.p.x) <= element.width / 2 &&
+                Math.abs(local.y - element.p.y) <= element.depth / 2
+            );
+        }
+        case 'pad':
+        case 'toposurface':
+            return pointInPolygon(world, element.points);
+        case 'propertyLine':
+            // Only the boundary picks, so the site inside stays clickable.
+            return element.points.some((point, index) => {
+                const next =
+                    element.points[(index + 1) % element.points.length];
+
+                return (
+                    projectOnSegment(world, point, next).distance <= tolerance
+                );
+            });
+        case 'walkthrough':
+            // An open path — no closing edge between the last and first stop.
+            return element.points.some((point, index) => {
+                const next = element.points[index + 1];
+
+                return (
+                    next !== undefined &&
+                    projectOnSegment(world, point, next).distance <= tolerance
+                );
+            });
         case 'text':
+        case 'spotElevation':
             return distance(world, element.p) <= tolerance * 4;
         default:
             return false;
@@ -549,6 +822,11 @@ function transformElement(
         case 'ramp':
         case 'referencePlane':
         case 'section':
+        case 'railing':
+        case 'brace':
+        case 'duct':
+        case 'pipe':
+        case 'cableTray':
             return {
                 ...element,
                 a: transform(element.a),
@@ -558,11 +836,18 @@ function transformElement(
         case 'room':
         case 'text':
         case 'mesh':
+        case 'footing':
+        case 'fixture':
+        case 'spotElevation':
             return { ...element, p: transform(element.p) };
         case 'floor':
         case 'ceiling':
         case 'roof':
         case 'revisionCloud':
+        case 'pad':
+        case 'toposurface':
+        case 'propertyLine':
+        case 'walkthrough':
             return { ...element, points: element.points.map(transform) };
         default:
             // Openings ride along with the wall that hosts them.
@@ -580,7 +865,7 @@ export function translateElements(
     return {
         ...document,
         elements: document.elements.map((element) =>
-            selected.has(element.id)
+            selected.has(element.id) && !element.pinned
                 ? transformElement(element, (p) => add(p, delta))
                 : element,
         ),
@@ -598,7 +883,7 @@ export function rotateElements(
     return {
         ...document,
         elements: document.elements.map((element) => {
-            if (!selected.has(element.id)) {
+            if (!selected.has(element.id) || element.pinned) {
                 return element;
             }
 
@@ -606,7 +891,7 @@ export function rotateElements(
                 rotate(p, radians, origin),
             );
 
-            return rotated.kind === 'column'
+            return rotated.kind === 'column' || rotated.kind === 'fixture'
                 ? { ...rotated, rotation: rotated.rotation + radians }
                 : rotated;
         }),
@@ -632,7 +917,7 @@ export function mirrorElements(
     return {
         ...document,
         elements: document.elements.map((element) =>
-            selected.has(element.id)
+            selected.has(element.id) && !element.pinned
                 ? transformElement(element, reflect)
                 : element,
         ),
@@ -658,7 +943,14 @@ export function copyElements(
 
         const id = createId(element.kind);
         remap.set(element.id, id);
-        copies.push({ ...transformElement(element, (p) => add(p, delta)), id });
+        // The copy of a pinned element is an ordinary element — the pin
+        // belongs to the original. The mark IS copied, exactly as Revit does
+        // it, which is where duplicate-mark warnings come from.
+        copies.push({
+            ...transformElement(element, (p) => add(p, delta)),
+            id,
+            pinned: undefined,
+        });
     });
 
     document.elements.forEach((element) => {
@@ -751,6 +1043,30 @@ export function elementDisplayName(
             return `Beam ${element.width} x ${element.depth}`;
         case 'mesh':
             return element.name;
+        case 'railing':
+            return `Railing ${element.height}mm`;
+        case 'brace':
+            return `Brace ${element.width}mm`;
+        case 'footing':
+            return `Pad Footing ${element.width}mm`;
+        case 'duct':
+            return `${DUCT_SYSTEM_LABELS[element.system]} Duct ${element.width}mm`;
+        case 'pipe':
+            return `${PIPE_SYSTEM_LABELS[element.system]} Pipe Ø${element.diameter}`;
+        case 'cableTray':
+            return `Cable Tray ${element.width}mm`;
+        case 'fixture':
+            return element.name;
+        case 'pad':
+            return `Building Pad - ${element.thickness}mm`;
+        case 'toposurface':
+            return 'Toposurface';
+        case 'propertyLine':
+            return 'Property Line';
+        case 'spotElevation':
+            return 'Spot Elevation';
+        case 'walkthrough':
+            return `Walkthrough (${element.points.length} stops)`;
     }
 }
 
@@ -775,9 +1091,31 @@ export function elementCategory(kind: ElementKind): string {
         revisionCloud: 'Revision Clouds',
         section: 'Sections',
         mesh: 'Imported Geometry',
+        railing: 'Railings',
+        brace: 'Structural Braces',
+        footing: 'Structural Foundations',
+        duct: 'Ducts',
+        pipe: 'Pipes',
+        cableTray: 'Cable Trays',
+        fixture: 'Components',
+        pad: 'Pads',
+        toposurface: 'Topography',
+        propertyLine: 'Property Lines',
+        spotElevation: 'Spot Elevations',
+        walkthrough: 'Walkthroughs',
     };
 
     return labels[kind];
+}
+
+/** Footprint of a placed component, shared by drawing, picking and solids. */
+export function fixtureFootprint(fixture: FixtureElement): Point[] {
+    return rectCorners(
+        fixture.p,
+        fixture.width,
+        fixture.depth,
+        fixture.rotation,
+    );
 }
 
 /** Total length of every wall on a level, used by the status readouts. */
@@ -851,4 +1189,120 @@ export function hitTestCandidates(
             ),
         )
         .sort((a, b) => HIT_PRIORITY[a.kind] - HIT_PRIORITY[b.kind]);
+}
+
+/* ------------------------------------------------------------ housekeeping */
+
+/**
+ * Pin or release elements. A pinned element stays put: move, rotate, mirror
+ * and its grips all refuse it, and Delete leaves it behind.
+ */
+export function withPinned(
+    document: CadDocument,
+    ids: string[],
+    pinned: boolean,
+): CadDocument {
+    const chosen = new Set(ids);
+
+    return {
+        ...document,
+        elements: document.elements.map((element) =>
+            chosen.has(element.id)
+                ? { ...element, pinned: pinned || undefined }
+                : element,
+        ),
+    };
+}
+
+/**
+ * Revit's Match Type Properties, applied across a selection: the first
+ * element is the source, and every other selected element of the same kind
+ * takes its type.
+ *
+ * Openings also give up any instance size, because taking a type means
+ * taking its size — the same rule the properties palette applies.
+ */
+export function withMatchedTypes(
+    document: CadDocument,
+    selection: string[],
+): { document: CadDocument; changed: number } {
+    const [sourceId, ...targetIds] = selection;
+    const source = document.elements.find((item) => item.id === sourceId);
+
+    if (!source || !('typeId' in source) || targetIds.length === 0) {
+        return { document, changed: 0 };
+    }
+
+    const targets = new Set(targetIds);
+    let changed = 0;
+
+    const elements = document.elements.map((element): CadElement => {
+        if (
+            !targets.has(element.id) ||
+            element.kind !== source.kind ||
+            !('typeId' in element) ||
+            element.typeId === source.typeId
+        ) {
+            return element;
+        }
+
+        changed += 1;
+
+        if (element.kind === 'door' || element.kind === 'window') {
+            return {
+                ...element,
+                typeId: source.typeId,
+                width: undefined,
+                height: undefined,
+                ...(element.kind === 'window' ? { sillHeight: undefined } : {}),
+            };
+        }
+
+        return { ...element, typeId: source.typeId } as CadElement;
+    });
+
+    return { document: { ...document, elements }, changed };
+}
+
+/**
+ * The drawing tool that places more elements like this one — Revit's Create
+ * Similar. Null for the kinds nothing places directly, such as an imported
+ * mesh.
+ */
+export function toolForKind(kind: ElementKind): ToolId | null {
+    switch (kind) {
+        case 'wall':
+        case 'door':
+        case 'window':
+        case 'column':
+        case 'floor':
+        case 'room':
+        case 'dimension':
+        case 'text':
+        case 'line':
+        case 'roof':
+        case 'ceiling':
+        case 'stair':
+        case 'grid':
+        case 'beam':
+        case 'referencePlane':
+        case 'ramp':
+        case 'revisionCloud':
+        case 'section':
+        case 'railing':
+        case 'brace':
+        case 'footing':
+        case 'duct':
+        case 'pipe':
+        case 'cableTray':
+        case 'fixture':
+        case 'pad':
+        case 'toposurface':
+        case 'propertyLine':
+        case 'spotElevation':
+        case 'walkthrough':
+            return kind;
+        default:
+            return null;
+    }
 }

@@ -19,6 +19,7 @@ import type {
 import {
     buildOpeningGeometry,
     doorTypeOf,
+    fixtureFootprint,
     wallLayers,
     windowTypeOf,
 } from '@/lib/cad/model';
@@ -28,6 +29,8 @@ import { expandFootprint, roofRidge, stairSteps } from '@/lib/cad/solids';
 import { CAD_THEME } from '@/lib/cad/theme';
 import type {
     BeamElement,
+    BraceElement,
+    CableTrayElement,
     CadDocument,
     Camera,
     CeilingElement,
@@ -35,13 +38,22 @@ import type {
     CropRegion,
     DetailLevel,
     DimensionElement,
+    DuctElement,
+    DuctSystem,
+    FixtureElement,
     FloorElement,
+    FootingElement,
     GridElement,
     LineElement,
     MeshElement,
     OpeningElement,
+    PadElement,
     Phase,
+    PipeElement,
+    PipeSystem,
     Point,
+    PropertyLineElement,
+    RailingElement,
     RampElement,
     ReferencePlaneElement,
     RevisionCloudElement,
@@ -49,12 +61,20 @@ import type {
     SectionElement,
     RoomElement,
     SnapResult,
+    SpotElevationElement,
+    WalkthroughElement,
     StairElement,
     TextElement,
+    ToposurfaceElement,
     Units,
     ViewSettings,
 } from '@/lib/cad/types';
-import { formatArea, formatDimension, formatScale } from '@/lib/cad/units';
+import {
+    formatArea,
+    formatDimension,
+    formatLength,
+    formatScale,
+} from '@/lib/cad/units';
 
 /** Thickness of a door leaf in plan, in millimetres. */
 const DOOR_LEAF = 45;
@@ -75,6 +95,8 @@ export type PlanOverlay = {
     snap?: SnapResult | null;
     previewWalls?: { a: Point; b: Point; thickness: number }[];
     previewPolygon?: Point[] | null;
+    /** An open polyline being sketched, such as a walkthrough path. */
+    previewPath?: Point[] | null;
     previewOpening?: {
         center: Point;
         direction: Point;
@@ -185,12 +207,15 @@ export function drawPlan(
 
     drawGridLines(ctx, scene, toScreen);
     drawReferencePlanes(ctx, scene, toScreen);
+    drawPropertyLines(ctx, scene, toScreen);
     drawUnderlay(ctx, scene, toScreen);
 
     if (scene.revealHidden) {
         drawRevealedHidden(ctx, scene, toScreen);
     }
 
+    drawToposurfaces(ctx, scene, toScreen);
+    drawPads(ctx, scene, toScreen);
     drawFloors(ctx, scene, toScreen);
 
     if (scene.settings.showRooms) {
@@ -199,13 +224,20 @@ export function drawPlan(
 
     drawWalls(ctx, scene, viewport, toScreen);
     drawOpenings(ctx, scene, toScreen);
+    drawFootings(ctx, scene, toScreen);
     drawColumns(ctx, scene, toScreen);
     drawBeams(ctx, scene, toScreen);
+    drawBraces(ctx, scene, toScreen);
     drawStairs(ctx, scene, toScreen);
     drawRamps(ctx, scene, toScreen);
+    drawRailings(ctx, scene, toScreen);
     drawCeilings(ctx, scene, toScreen);
     drawRoofs(ctx, scene, toScreen);
     drawMeshes(ctx, scene, toScreen);
+    drawFixtures(ctx, scene, toScreen);
+    drawDucts(ctx, scene, toScreen);
+    drawCableTrays(ctx, scene, toScreen);
+    drawPipes(ctx, scene, toScreen);
     drawDetailLines(ctx, scene, toScreen);
     drawDimensions(ctx, scene, toScreen);
 
@@ -213,6 +245,8 @@ export function drawPlan(
         drawRoomTags(ctx, scene, toScreen);
         drawTextNotes(ctx, scene, toScreen);
         drawOpeningTags(ctx, scene, toScreen);
+        drawSpotElevations(ctx, scene, toScreen);
+        drawWalkthroughs(ctx, scene, toScreen);
         drawElevationMarkers(ctx, scene, toScreen);
         drawSectionMarks(ctx, scene, toScreen);
     }
@@ -1300,6 +1334,19 @@ function drawOverlay(
         ctx.stroke();
     }
 
+    if (overlay.previewPath && overlay.previewPath.length >= 2) {
+        const screen = overlay.previewPath.map(toScreen);
+
+        ctx.beginPath();
+        ctx.setLineDash([8, 5]);
+        ctx.strokeStyle = CAD_THEME.highlight;
+        ctx.lineWidth = 1.4;
+        ctx.moveTo(screen[0].x, screen[0].y);
+        screen.slice(1).forEach((p) => ctx.lineTo(p.x, p.y));
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
+
     if (overlay.previewOpening) {
         const { center, direction, normal, width, thickness, kind } =
             overlay.previewOpening;
@@ -1731,6 +1778,7 @@ export function gripKey(grip: Grip): string {
     switch (grip.kind) {
         case 'wallEnd':
         case 'lineEnd':
+        case 'openingJamb':
             return `${grip.elementId}:${grip.kind}:${grip.end}`;
         case 'floorVertex':
             return `${grip.elementId}:floorVertex:${grip.index}`;
@@ -2582,4 +2630,779 @@ function drawOpeningTags(
     });
 
     ctx.restore();
+}
+
+/* ------------------------------------------------- site, structure below */
+
+/** Toposurfaces: an earth fill with a sparse grass hatch, under everything. */
+function drawToposurfaces(
+    ctx: CanvasRenderingContext2D,
+    scene: PlanScene,
+    toScreen: (p: Point) => Point,
+): void {
+    elementsOf<ToposurfaceElement>(scene, 'toposurface').forEach((topo) => {
+        if (topo.points.length < 3) {
+            return;
+        }
+
+        const selected = scene.selection.has(topo.id);
+
+        ctx.save();
+        applyPhaseGraphics(ctx, topo);
+        ctx.beginPath();
+        tracePolygon(ctx, topo.points, toScreen);
+        ctx.fillStyle = selected ? CAD_THEME.selectionFill : CAD_THEME.topoFill;
+        ctx.fill();
+        ctx.strokeStyle = selected ? CAD_THEME.selection : CAD_THEME.topo;
+        ctx.lineWidth = selected ? 2 : 1.1;
+        ctx.stroke();
+        ctx.clip();
+
+        // Sparse diagonal hatch so the ground reads as landscape, not slab.
+        const screenPoints = topo.points.map(toScreen);
+        const minX = Math.min(...screenPoints.map((p) => p.x));
+        const maxX = Math.max(...screenPoints.map((p) => p.x));
+        const minY = Math.min(...screenPoints.map((p) => p.y));
+        const maxY = Math.max(...screenPoints.map((p) => p.y));
+        const span = maxX - minX + (maxY - minY);
+
+        ctx.beginPath();
+        ctx.strokeStyle = CAD_THEME.topo;
+        ctx.globalAlpha *= 0.35;
+        ctx.lineWidth = 0.6;
+
+        for (let offset = 0; offset <= span; offset += 26) {
+            ctx.moveTo(minX + offset, minY);
+            ctx.lineTo(minX + offset - (maxY - minY), maxY);
+        }
+
+        ctx.stroke();
+        ctx.restore();
+    });
+}
+
+/** Building pads: a recessed patch of site, edged with a dashed cut line. */
+function drawPads(
+    ctx: CanvasRenderingContext2D,
+    scene: PlanScene,
+    toScreen: (p: Point) => Point,
+): void {
+    elementsOf<PadElement>(scene, 'pad').forEach((pad) => {
+        if (pad.points.length < 3) {
+            return;
+        }
+
+        const selected = scene.selection.has(pad.id);
+
+        ctx.save();
+        applyPhaseGraphics(ctx, pad);
+        ctx.beginPath();
+        tracePolygon(ctx, pad.points, toScreen);
+        ctx.fillStyle = selected
+            ? CAD_THEME.selectionFill
+            : CAD_THEME.paperShade;
+        ctx.fill();
+        ctx.setLineDash([8, 4]);
+        ctx.strokeStyle = selected ? CAD_THEME.selection : CAD_THEME.inkFaint;
+        ctx.lineWidth = selected ? 2 : 1;
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+    });
+}
+
+/** Property lines: the heavy dash-dot legal boundary with vertex markers. */
+function drawPropertyLines(
+    ctx: CanvasRenderingContext2D,
+    scene: PlanScene,
+    toScreen: (p: Point) => Point,
+): void {
+    elementsOf<PropertyLineElement>(scene, 'propertyLine').forEach((line) => {
+        if (line.points.length < 2) {
+            return;
+        }
+
+        const selected = scene.selection.has(line.id);
+        const colour = selected ? CAD_THEME.selection : CAD_THEME.propertyLine;
+
+        ctx.save();
+        ctx.beginPath();
+        tracePolygon(ctx, line.points, toScreen);
+        ctx.setLineDash([16, 5, 3, 5, 3, 5]);
+        ctx.strokeStyle = colour;
+        ctx.lineWidth = selected ? 2.2 : 1.6;
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = colour;
+        line.points.forEach((point) => {
+            const at = toScreen(point);
+            ctx.fillRect(at.x - 2.5, at.y - 2.5, 5, 5);
+        });
+
+        ctx.restore();
+    });
+}
+
+/** Pad footings: hidden below grade, so a dashed outline with faint diagonals. */
+function drawFootings(
+    ctx: CanvasRenderingContext2D,
+    scene: PlanScene,
+    toScreen: (p: Point) => Point,
+): void {
+    elementsOf<FootingElement>(scene, 'footing').forEach((footing) => {
+        const selected = scene.selection.has(footing.id);
+        const half = footing.width / 2;
+        const corners: Point[] = [
+            { x: footing.p.x - half, y: footing.p.y - half },
+            { x: footing.p.x + half, y: footing.p.y - half },
+            { x: footing.p.x + half, y: footing.p.y + half },
+            { x: footing.p.x - half, y: footing.p.y + half },
+        ];
+
+        ctx.save();
+        applyPhaseGraphics(ctx, footing);
+        ctx.beginPath();
+        tracePolygon(ctx, corners, toScreen);
+        ctx.setLineDash([6, 4]);
+        ctx.strokeStyle = selected ? CAD_THEME.selection : CAD_THEME.inkSoft;
+        ctx.lineWidth = selected ? 2 : 1.1;
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        const [a, b, c, d] = corners.map(toScreen);
+
+        ctx.beginPath();
+        ctx.strokeStyle = CAD_THEME.inkFaint;
+        ctx.lineWidth = 0.6;
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(c.x, c.y);
+        ctx.moveTo(b.x, b.y);
+        ctx.lineTo(d.x, d.y);
+        ctx.stroke();
+        ctx.restore();
+    });
+}
+
+/** Braces: a heavy dashed diagonal with a connection plate at each end. */
+function drawBraces(
+    ctx: CanvasRenderingContext2D,
+    scene: PlanScene,
+    toScreen: (p: Point) => Point,
+): void {
+    elementsOf<BraceElement>(scene, 'brace').forEach((brace) => {
+        const selected = scene.selection.has(brace.id);
+        const from = toScreen(brace.a);
+        const to = toScreen(brace.b);
+
+        ctx.save();
+        applyPhaseGraphics(ctx, brace);
+        ctx.beginPath();
+        ctx.setLineDash([12, 5]);
+        ctx.strokeStyle = selected ? CAD_THEME.selection : CAD_THEME.inkSoft;
+        ctx.lineWidth = selected ? 2.4 : 1.6;
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = selected ? CAD_THEME.selection : CAD_THEME.inkSoft;
+        [from, to].forEach((end) => {
+            ctx.fillRect(end.x - 3, end.y - 3, 6, 6);
+        });
+        ctx.restore();
+    });
+}
+
+/** Railings: the run with a baluster tick at every module. */
+function drawRailings(
+    ctx: CanvasRenderingContext2D,
+    scene: PlanScene,
+    toScreen: (p: Point) => Point,
+): void {
+    elementsOf<RailingElement>(scene, 'railing').forEach((railing) => {
+        const run = distance(railing.a, railing.b);
+
+        if (run < 10) {
+            return;
+        }
+
+        const selected = scene.selection.has(railing.id);
+        const along = normalize(subtract(railing.b, railing.a));
+        const tick = scale(perpendicular(along), 60);
+        const from = toScreen(railing.a);
+        const to = toScreen(railing.b);
+
+        ctx.save();
+        applyPhaseGraphics(ctx, railing);
+        ctx.strokeStyle = selected ? CAD_THEME.selection : CAD_THEME.ink;
+        ctx.lineWidth = selected ? 2.2 : 1.5;
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+        ctx.stroke();
+
+        const balusters = Math.max(Math.round(run / 300), 1);
+
+        ctx.beginPath();
+        ctx.lineWidth = selected ? 1.4 : 0.9;
+
+        for (let index = 0; index <= balusters; index++) {
+            const at = lerp(railing.a, railing.b, index / balusters);
+            const above = toScreen(add(at, tick));
+            const below = toScreen(subtract(at, tick));
+            ctx.moveTo(above.x, above.y);
+            ctx.lineTo(below.x, below.y);
+        }
+
+        ctx.stroke();
+        ctx.restore();
+    });
+}
+
+/* ----------------------------------------------------------- MEP services */
+
+function ductColour(system: DuctSystem): string {
+    const colours: Record<DuctSystem, string> = {
+        supply: CAD_THEME.ductSupply,
+        return: CAD_THEME.ductReturn,
+        exhaust: CAD_THEME.ductExhaust,
+    };
+
+    return colours[system];
+}
+
+function pipeColour(system: PipeSystem): string {
+    const colours: Record<PipeSystem, string> = {
+        domestic: CAD_THEME.pipeDomestic,
+        sanitary: CAD_THEME.pipeSanitary,
+        hydronic: CAD_THEME.pipeHydronic,
+        fire: CAD_THEME.pipeFire,
+    };
+
+    return colours[system];
+}
+
+/** Flow arrow drawn at the end of a service run. */
+function drawFlowArrow(
+    ctx: CanvasRenderingContext2D,
+    from: Point,
+    to: Point,
+): void {
+    const angle = Math.atan2(to.y - from.y, to.x - from.x);
+
+    ctx.beginPath();
+    ctx.moveTo(to.x, to.y);
+    ctx.lineTo(
+        to.x - Math.cos(angle - 0.42) * 10,
+        to.y - Math.sin(angle - 0.42) * 10,
+    );
+    ctx.lineTo(
+        to.x - Math.cos(angle + 0.42) * 10,
+        to.y - Math.sin(angle + 0.42) * 10,
+    );
+    ctx.closePath();
+    ctx.fill();
+}
+
+/**
+ * Ducts in plan: the double line at true width, tinted by system, with a
+ * dash-dot centre line and a flow arrow at the run's end.
+ */
+function drawDucts(
+    ctx: CanvasRenderingContext2D,
+    scene: PlanScene,
+    toScreen: (p: Point) => Point,
+): void {
+    elementsOf<DuctElement>(scene, 'duct').forEach((duct) => {
+        if (distance(duct.a, duct.b) < 10) {
+            return;
+        }
+
+        const selected = scene.selection.has(duct.id);
+        const colour = selected ? CAD_THEME.selection : ductColour(duct.system);
+        const along = normalize(subtract(duct.b, duct.a));
+        const side = scale(perpendicular(along), duct.width / 2);
+
+        ctx.save();
+        applyPhaseGraphics(ctx, duct);
+
+        ctx.beginPath();
+        tracePolygon(
+            ctx,
+            [
+                add(duct.a, side),
+                add(duct.b, side),
+                subtract(duct.b, side),
+                subtract(duct.a, side),
+            ],
+            toScreen,
+        );
+        ctx.globalAlpha *= selected ? 1 : 0.92;
+        ctx.fillStyle = selected
+            ? CAD_THEME.selectionFill
+            : 'rgba(42, 111, 143, 0.08)';
+        ctx.fill();
+        ctx.strokeStyle = colour;
+        ctx.lineWidth = selected ? 2 : 1.2;
+        ctx.stroke();
+
+        const from = toScreen(duct.a);
+        const to = toScreen(duct.b);
+
+        ctx.beginPath();
+        ctx.setLineDash([10, 4, 2, 4]);
+        ctx.lineWidth = 0.8;
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = colour;
+        drawFlowArrow(ctx, from, to);
+        ctx.restore();
+    });
+}
+
+/** Cable trays: two edge lines with ladder rungs at every module. */
+function drawCableTrays(
+    ctx: CanvasRenderingContext2D,
+    scene: PlanScene,
+    toScreen: (p: Point) => Point,
+): void {
+    elementsOf<CableTrayElement>(scene, 'cableTray').forEach((tray) => {
+        const run = distance(tray.a, tray.b);
+
+        if (run < 10) {
+            return;
+        }
+
+        const selected = scene.selection.has(tray.id);
+        const colour = selected ? CAD_THEME.selection : CAD_THEME.cableTray;
+        const along = normalize(subtract(tray.b, tray.a));
+        const side = scale(perpendicular(along), tray.width / 2);
+
+        ctx.save();
+        applyPhaseGraphics(ctx, tray);
+        ctx.strokeStyle = colour;
+        ctx.lineWidth = selected ? 2 : 1.2;
+
+        ctx.beginPath();
+        [side, scale(side, -1)].forEach((offset) => {
+            const from = toScreen(add(tray.a, offset));
+            const to = toScreen(add(tray.b, offset));
+            ctx.moveTo(from.x, from.y);
+            ctx.lineTo(to.x, to.y);
+        });
+        ctx.stroke();
+
+        const rungs = Math.max(Math.round(run / 300), 1);
+
+        ctx.beginPath();
+        ctx.lineWidth = 0.8;
+
+        for (let index = 0; index <= rungs; index++) {
+            const at = lerp(tray.a, tray.b, index / rungs);
+            const above = toScreen(add(at, side));
+            const below = toScreen(subtract(at, side));
+            ctx.moveTo(above.x, above.y);
+            ctx.lineTo(below.x, below.y);
+        }
+
+        ctx.stroke();
+        ctx.restore();
+    });
+}
+
+/** Pipes: a single-line run in the system colour with tick marks at the ends. */
+function drawPipes(
+    ctx: CanvasRenderingContext2D,
+    scene: PlanScene,
+    toScreen: (p: Point) => Point,
+): void {
+    elementsOf<PipeElement>(scene, 'pipe').forEach((pipe) => {
+        if (distance(pipe.a, pipe.b) < 10) {
+            return;
+        }
+
+        const selected = scene.selection.has(pipe.id);
+        const colour = selected ? CAD_THEME.selection : pipeColour(pipe.system);
+        const from = toScreen(pipe.a);
+        const to = toScreen(pipe.b);
+        const angle = Math.atan2(to.y - from.y, to.x - from.x);
+
+        ctx.save();
+        applyPhaseGraphics(ctx, pipe);
+        ctx.strokeStyle = colour;
+        ctx.lineWidth = selected ? 2.4 : 1.7;
+
+        if (pipe.system === 'sanitary') {
+            ctx.setLineDash([9, 5]);
+        }
+
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Short perpendicular ticks close each end, reading as fittings.
+        const tickX = Math.cos(angle + Math.PI / 2) * 5;
+        const tickY = Math.sin(angle + Math.PI / 2) * 5;
+
+        ctx.beginPath();
+        ctx.lineWidth = selected ? 1.6 : 1.1;
+        [from, to].forEach((end) => {
+            ctx.moveTo(end.x - tickX, end.y - tickY);
+            ctx.lineTo(end.x + tickX, end.y + tickY);
+        });
+        ctx.stroke();
+        ctx.restore();
+    });
+}
+
+/* ------------------------------------------------------ placed components */
+
+/**
+ * Components carry the plan symbol of their category: an X-ed diffuser, a
+ * crossed luminaire circle, a canopy for planting, an open parking stall —
+ * the shorthand a drawing reader already knows.
+ */
+function drawFixtures(
+    ctx: CanvasRenderingContext2D,
+    scene: PlanScene,
+    toScreen: (p: Point) => Point,
+): void {
+    elementsOf<FixtureElement>(scene, 'fixture').forEach((fixture) => {
+        const selected = scene.selection.has(fixture.id);
+        const colour = selected ? CAD_THEME.selection : CAD_THEME.inkSoft;
+        const footprint = fixtureFootprint(fixture);
+        const [a, b, c, d] = footprint.map(toScreen);
+        const centre = toScreen(fixture.p);
+        const radius =
+            (Math.min(fixture.width, fixture.depth) / 2) *
+            (distance(a, b) / Math.max(fixture.width, 1));
+
+        ctx.save();
+        applyPhaseGraphics(ctx, fixture);
+        ctx.strokeStyle = colour;
+        ctx.lineWidth = selected ? 2 : 1.1;
+
+        switch (fixture.category) {
+            case 'planting': {
+                // Canopy circle with radial ticks and the trunk at centre.
+                const canopy = Math.max(radius, 4);
+
+                ctx.beginPath();
+                ctx.arc(centre.x, centre.y, canopy, 0, Math.PI * 2);
+                ctx.fillStyle = selected
+                    ? CAD_THEME.selectionFill
+                    : CAD_THEME.topoFill;
+                ctx.fill();
+                ctx.strokeStyle = selected
+                    ? CAD_THEME.selection
+                    : CAD_THEME.topo;
+                ctx.stroke();
+
+                ctx.beginPath();
+
+                for (let index = 0; index < 8; index++) {
+                    const angle = (index / 8) * Math.PI * 2 + Math.PI / 8;
+                    ctx.moveTo(
+                        centre.x + Math.cos(angle) * canopy * 0.55,
+                        centre.y + Math.sin(angle) * canopy * 0.55,
+                    );
+                    ctx.lineTo(
+                        centre.x + Math.cos(angle) * canopy,
+                        centre.y + Math.sin(angle) * canopy,
+                    );
+                }
+
+                ctx.lineWidth = 0.8;
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.arc(centre.x, centre.y, 2.2, 0, Math.PI * 2);
+                ctx.fillStyle = selected ? CAD_THEME.selection : CAD_THEME.topo;
+                ctx.fill();
+                break;
+            }
+            case 'parking': {
+                // Stall open at the aisle end, with a centre tick.
+                ctx.beginPath();
+                ctx.moveTo(a.x, a.y);
+                ctx.lineTo(d.x, d.y);
+                ctx.lineTo(c.x, c.y);
+                ctx.lineTo(b.x, b.y);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.lineWidth = 0.8;
+                const backMid = midpoint(d, c);
+                const frontMid = midpoint(a, b);
+                const inset = lerp(frontMid, backMid, 0.25);
+                ctx.moveTo(frontMid.x, frontMid.y);
+                ctx.lineTo(inset.x, inset.y);
+                ctx.stroke();
+                break;
+            }
+            case 'lighting': {
+                ctx.beginPath();
+                ctx.arc(
+                    centre.x,
+                    centre.y,
+                    Math.max(radius, 3),
+                    0,
+                    Math.PI * 2,
+                );
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.lineWidth = 0.9;
+                [0, Math.PI / 2].forEach((angle) => {
+                    const reach = Math.max(radius, 3) * 1.35;
+                    ctx.moveTo(
+                        centre.x - Math.cos(angle) * reach,
+                        centre.y - Math.sin(angle) * reach,
+                    );
+                    ctx.lineTo(
+                        centre.x + Math.cos(angle) * reach,
+                        centre.y + Math.sin(angle) * reach,
+                    );
+                });
+                ctx.stroke();
+                break;
+            }
+            case 'sprinkler': {
+                ctx.beginPath();
+                ctx.arc(
+                    centre.x,
+                    centre.y,
+                    Math.max(radius, 2.5),
+                    0,
+                    Math.PI * 2,
+                );
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(centre.x, centre.y, 1.4, 0, Math.PI * 2);
+                ctx.fillStyle = colour;
+                ctx.fill();
+                break;
+            }
+            case 'electrical': {
+                ctx.beginPath();
+                tracePolygon(ctx, footprint, toScreen);
+                ctx.fillStyle = selected
+                    ? CAD_THEME.selectionFill
+                    : CAD_THEME.wallPoche;
+                ctx.fill();
+                ctx.stroke();
+                break;
+            }
+            case 'airTerminal': {
+                ctx.beginPath();
+                tracePolygon(ctx, footprint, toScreen);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.lineWidth = 0.8;
+                ctx.moveTo(a.x, a.y);
+                ctx.lineTo(c.x, c.y);
+                ctx.moveTo(b.x, b.y);
+                ctx.lineTo(d.x, d.y);
+                ctx.stroke();
+                break;
+            }
+            case 'plumbing': {
+                ctx.beginPath();
+                tracePolygon(ctx, footprint, toScreen);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.lineWidth = 0.8;
+                ctx.ellipse(
+                    centre.x,
+                    centre.y,
+                    Math.max(distance(a, b) * 0.32, 2),
+                    Math.max(distance(b, c) * 0.32, 2),
+                    angleOf(subtract(b, a)),
+                    0,
+                    Math.PI * 2,
+                );
+                ctx.stroke();
+                break;
+            }
+            default: {
+                // Mechanical equipment and furniture: the plain footprint,
+                // equipment with a single diagonal.
+                ctx.beginPath();
+                tracePolygon(ctx, footprint, toScreen);
+                ctx.fillStyle = selected
+                    ? CAD_THEME.selectionFill
+                    : 'rgba(179, 164, 143, 0.12)';
+                ctx.fill();
+                ctx.stroke();
+
+                if (fixture.category === 'mechanical') {
+                    ctx.beginPath();
+                    ctx.lineWidth = 0.8;
+                    ctx.moveTo(a.x, a.y);
+                    ctx.lineTo(c.x, c.y);
+                    ctx.stroke();
+                }
+
+                break;
+            }
+        }
+
+        ctx.restore();
+    });
+}
+
+/** Spot elevations: a target with a leader carrying the level's height. */
+function drawSpotElevations(
+    ctx: CanvasRenderingContext2D,
+    scene: PlanScene,
+    toScreen: (p: Point) => Point,
+): void {
+    const spots = elementsOf<SpotElevationElement>(scene, 'spotElevation');
+
+    if (spots.length === 0) {
+        return;
+    }
+
+    const elevation =
+        scene.document.levels.find((level) => level.id === scene.level)
+            ?.elevation ?? 0;
+    const label = formatLength(elevation, scene.units);
+
+    ctx.save();
+    ctx.font = '600 10px Karla, ui-sans-serif, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+
+    spots.forEach((spot) => {
+        const selected = scene.selection.has(spot.id);
+        const colour = selected ? CAD_THEME.selection : CAD_THEME.dimension;
+        const at = toScreen(spot.p);
+
+        ctx.strokeStyle = colour;
+        ctx.lineWidth = selected ? 1.8 : 1.1;
+
+        ctx.beginPath();
+        ctx.arc(at.x, at.y, 5, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(at.x - 7, at.y);
+        ctx.lineTo(at.x + 7, at.y);
+        ctx.moveTo(at.x, at.y - 7);
+        ctx.lineTo(at.x, at.y + 7);
+        ctx.stroke();
+
+        // Leader up-right to the value.
+        ctx.beginPath();
+        ctx.moveTo(at.x + 5, at.y - 5);
+        ctx.lineTo(at.x + 16, at.y - 14);
+        ctx.lineTo(at.x + 40, at.y - 14);
+        ctx.stroke();
+
+        ctx.fillStyle = colour;
+        ctx.fillText(label, at.x + 18, at.y - 20);
+    });
+
+    ctx.restore();
+}
+
+/**
+ * Walkthrough paths: a dashed camera route with a viewpoint glyph at the
+ * start, direction arrows along the way and a numbered dot at every stop.
+ */
+function drawWalkthroughs(
+    ctx: CanvasRenderingContext2D,
+    scene: PlanScene,
+    toScreen: (p: Point) => Point,
+): void {
+    elementsOf<WalkthroughElement>(scene, 'walkthrough').forEach((path) => {
+        if (path.points.length < 2) {
+            return;
+        }
+
+        const selected = scene.selection.has(path.id);
+        const colour = selected ? CAD_THEME.selection : CAD_THEME.datum;
+        const screen = path.points.map(toScreen);
+
+        ctx.save();
+        ctx.strokeStyle = colour;
+        ctx.fillStyle = colour;
+        ctx.lineWidth = selected ? 2 : 1.3;
+
+        ctx.beginPath();
+        ctx.setLineDash([9, 6]);
+        ctx.moveTo(screen[0].x, screen[0].y);
+        screen.slice(1).forEach((p) => ctx.lineTo(p.x, p.y));
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // A direction arrow at the middle of every segment.
+        for (let index = 1; index < screen.length; index++) {
+            const from = screen[index - 1];
+            const to = screen[index];
+            const angle = Math.atan2(to.y - from.y, to.x - from.x);
+            const mid = midpoint(from, to);
+
+            ctx.beginPath();
+            ctx.moveTo(
+                mid.x + Math.cos(angle) * 6,
+                mid.y + Math.sin(angle) * 6,
+            );
+            ctx.lineTo(
+                mid.x + Math.cos(angle + 2.5) * 6,
+                mid.y + Math.sin(angle + 2.5) * 6,
+            );
+            ctx.lineTo(
+                mid.x + Math.cos(angle - 2.5) * 6,
+                mid.y + Math.sin(angle - 2.5) * 6,
+            );
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        // Numbered stop at every vertex.
+        ctx.font = '600 9px Karla, ui-sans-serif, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        screen.forEach((stop, index) => {
+            ctx.beginPath();
+            ctx.arc(stop.x, stop.y, 7, 0, Math.PI * 2);
+            ctx.fillStyle = CAD_THEME.paper;
+            ctx.fill();
+            ctx.strokeStyle = colour;
+            ctx.lineWidth = 1.1;
+            ctx.stroke();
+            ctx.fillStyle = colour;
+            ctx.fillText(String(index + 1), stop.x, stop.y + 0.5);
+        });
+
+        // Camera glyph at the start: a small body with its lens aimed along.
+        const start = screen[0];
+        const aim = Math.atan2(screen[1].y - start.y, screen[1].x - start.x);
+
+        ctx.beginPath();
+        ctx.moveTo(start.x + Math.cos(aim) * 16, start.y + Math.sin(aim) * 16);
+        ctx.lineTo(
+            start.x + Math.cos(aim + 0.5) * 9,
+            start.y + Math.sin(aim + 0.5) * 9,
+        );
+        ctx.lineTo(
+            start.x + Math.cos(aim - 0.5) * 9,
+            start.y + Math.sin(aim - 0.5) * 9,
+        );
+        ctx.closePath();
+        ctx.fillStyle = colour;
+        ctx.fill();
+
+        ctx.restore();
+    });
 }

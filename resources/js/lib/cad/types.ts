@@ -43,10 +43,38 @@ export type LocationLine = 'center' | 'left' | 'right';
 /** Construction phase, mirroring Revit's phasing. Absent means new. */
 export type Phase = 'existing' | 'new' | 'demolished';
 
+/** Which air a duct run carries. */
+export type DuctSystem = 'supply' | 'return' | 'exhaust';
+
+/** What a pipe run serves. */
+export type PipeSystem = 'domestic' | 'sanitary' | 'hydronic' | 'fire';
+
+/**
+ * What a placed component is. One element kind stands in for the loadable
+ * families Revit places — equipment, fixtures, furniture and site pieces —
+ * with the category driving the plan symbol, the solid and the defaults.
+ */
+export type FixtureCategory =
+    | 'mechanical'
+    | 'airTerminal'
+    | 'lighting'
+    | 'electrical'
+    | 'plumbing'
+    | 'sprinkler'
+    | 'furniture'
+    | 'planting'
+    | 'parking';
+
 type BaseElement = {
     id: string;
     level: string;
     phase?: Phase;
+    /** A pinned element refuses to move, rotate, mirror or stretch. */
+    pinned?: boolean;
+    /** The Mark: a short label unique to this element, as Revit uses it. */
+    mark?: string;
+    /** Free-text comments carried on the element. */
+    comment?: string;
 };
 
 export type WallElement = BaseElement & {
@@ -66,6 +94,9 @@ export type DoorElement = BaseElement & {
     t: number;
     flipFace: boolean;
     flipHand: boolean;
+    /** Instance size, overriding the door type. Absent means follow the type. */
+    width?: number;
+    height?: number;
 };
 
 export type WindowElement = BaseElement & {
@@ -75,6 +106,13 @@ export type WindowElement = BaseElement & {
     t: number;
     flipFace: boolean;
     flipHand: boolean;
+    /**
+     * Instance size, overriding the window type. Absent means follow the
+     * type, so resizing one window never disturbs the rest of its kind.
+     */
+    width?: number;
+    height?: number;
+    sillHeight?: number;
 };
 
 export type ColumnElement = BaseElement & {
@@ -233,6 +271,122 @@ export type MeshElement = BaseElement & {
     size: { x: number; y: number; z: number };
 };
 
+/** A guardrail run drawn along its centre line at the level. */
+export type RailingElement = BaseElement & {
+    kind: 'railing';
+    a: Point;
+    b: Point;
+    height: number;
+};
+
+/** A diagonal structural member climbing from `a` up to `b`. */
+export type BraceElement = BaseElement & {
+    kind: 'brace';
+    a: Point;
+    b: Point;
+    /** Square section size in millimetres. */
+    width: number;
+    /** Vertical climb from the level at `a` to the top at `b`. */
+    rise: number;
+};
+
+/** An isolated pad foundation spreading below the level. */
+export type FootingElement = BaseElement & {
+    kind: 'footing';
+    p: Point;
+    width: number;
+    /** How far the pad reaches below the level, in millimetres. */
+    depth: number;
+};
+
+/** A run of rectangular duct held at a constant height above the level. */
+export type DuctElement = BaseElement & {
+    kind: 'duct';
+    a: Point;
+    b: Point;
+    width: number;
+    /** Centre line height above the level, in millimetres. */
+    elevation: number;
+    system: DuctSystem;
+};
+
+/** A pipe run held at a constant height above the level. */
+export type PipeElement = BaseElement & {
+    kind: 'pipe';
+    a: Point;
+    b: Point;
+    diameter: number;
+    /** Centre line height above the level, in millimetres. */
+    elevation: number;
+    system: PipeSystem;
+};
+
+/** A cable tray run held at a constant height above the level. */
+export type CableTrayElement = BaseElement & {
+    kind: 'cableTray';
+    a: Point;
+    b: Point;
+    width: number;
+    /** Centre line height above the level, in millimetres. */
+    elevation: number;
+};
+
+/**
+ * A placed component — equipment, a fixture, furniture or a site piece.
+ * The footprint is `width` × `depth` centred on `p`, turned by `rotation`.
+ */
+export type FixtureElement = BaseElement & {
+    kind: 'fixture';
+    p: Point;
+    rotation: number;
+    category: FixtureCategory;
+    name: string;
+    width: number;
+    depth: number;
+    height: number;
+    /** Height of the underside above the level, in millimetres. */
+    elevation: number;
+};
+
+/** A building pad cut into the site, sketched like a floor. */
+export type PadElement = BaseElement & {
+    kind: 'pad';
+    points: Point[];
+    thickness: number;
+};
+
+/** A patch of site ground modelled as a flat body below the level. */
+export type ToposurfaceElement = BaseElement & {
+    kind: 'toposurface';
+    points: Point[];
+    /** Depth of ground below the level, in millimetres. */
+    depth: number;
+};
+
+/** The legal site boundary, drawn as a heavy dash-dot loop. */
+export type PropertyLineElement = BaseElement & {
+    kind: 'propertyLine';
+    points: Point[];
+};
+
+/** An annotation reporting the level elevation at a point. */
+export type SpotElevationElement = BaseElement & {
+    kind: 'spotElevation';
+    p: Point;
+};
+
+/**
+ * A camera path sketched through the plan, played back as a first-person
+ * tour in the 3D view — Revit's walkthrough, without the keyframe editing.
+ */
+export type WalkthroughElement = BaseElement & {
+    kind: 'walkthrough';
+    /** The path walked, in order. Open — the tour does not loop. */
+    points: Point[];
+    /** Eye height above the level, in millimetres. */
+    eyeHeight: number;
+};
+
 export type CadElement =
     | WallElement
     | DoorElement
@@ -252,7 +406,19 @@ export type CadElement =
     | RampElement
     | RevisionCloudElement
     | SectionElement
-    | MeshElement;
+    | MeshElement
+    | RailingElement
+    | BraceElement
+    | FootingElement
+    | DuctElement
+    | PipeElement
+    | CableTrayElement
+    | FixtureElement
+    | PadElement
+    | ToposurfaceElement
+    | PropertyLineElement
+    | SpotElevationElement
+    | WalkthroughElement;
 
 export type ElementKind = CadElement['kind'];
 
@@ -356,6 +522,18 @@ export type ToolId =
     | 'ramp'
     | 'revisionCloud'
     | 'section'
+    | 'railing'
+    | 'brace'
+    | 'footing'
+    | 'duct'
+    | 'pipe'
+    | 'cableTray'
+    | 'fixture'
+    | 'pad'
+    | 'toposurface'
+    | 'propertyLine'
+    | 'spotElevation'
+    | 'walkthrough'
     | 'move'
     | 'copy'
     | 'rotate'
@@ -397,4 +575,14 @@ export type OrbitCamera = {
     elevation: number;
     distance: number;
     target: { x: number; y: number; z: number };
+};
+
+/**
+ * A first-person camera: the eye itself, aimed by yaw and pitch. Yaw follows
+ * the plan convention (0 east, counter-clockwise); pitch is up-positive.
+ */
+export type WalkCamera = {
+    eye: { x: number; y: number; z: number };
+    yaw: number;
+    pitch: number;
 };

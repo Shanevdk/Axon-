@@ -18,6 +18,7 @@ use stdClass;
  * @property string|null $number
  * @property string|null $client
  * @property string|null $address
+ * @property string|null $jurisdiction
  * @property string $units
  * @property array<string, mixed> $document
  * @property bool $has_local_model
@@ -28,7 +29,7 @@ use stdClass;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'number', 'client', 'address', 'units', 'document'])]
+#[Fillable(['name', 'number', 'client', 'address', 'jurisdiction', 'units', 'document'])]
 class Project extends Model
 {
     /** @use HasFactory<ProjectFactory> */

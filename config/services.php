@@ -51,6 +51,50 @@ return [
         'timeout' => (int) env('OPENROUTER_TIMEOUT', 60),
     ],
 
+    /*
+     * Claude Code on this machine, driven headlessly so the item designer's
+     * terminal answers in the page.
+     *
+     * This is what lets a Claude subscription design furniture: the CLI is
+     * already signed in, so nothing here bills an API account. It runs a
+     * local binary, so it is only enabled where that is the user's own
+     * computer — set CLAUDE_CODE_ENABLED explicitly to allow it elsewhere.
+     */
+    'claude_code' => [
+        'binary' => env('CLAUDE_CODE_BINARY', 'claude'),
+        'enabled' => env('CLAUDE_CODE_ENABLED'),
+        'timeout' => (int) env('CLAUDE_CODE_TIMEOUT', 180),
+    ],
+
+    /*
+     * Base URLs for the providers a user can connect their own AI account
+     * from. Configurable so the tests can point them at fakes; the keys
+     * themselves live per user, encrypted, in ai_connections.
+     */
+    'anthropic' => [
+        'url' => env('ANTHROPIC_URL', 'https://api.anthropic.com'),
+        'version' => '2023-06-01',
+        'timeout' => (int) env('ANTHROPIC_TIMEOUT', 60),
+    ],
+
+    'openai' => [
+        'url' => env('OPENAI_URL', 'https://api.openai.com'),
+        'timeout' => (int) env('OPENAI_TIMEOUT', 60),
+    ],
+
+    /*
+     * Turns the browser's coordinates into a place name, so the code
+     * assistant can be told where a building is without anyone typing it.
+     * Free and keyless, and only ever sent a rounded latitude and longitude.
+     */
+    'geocoder' => [
+        'url' => env(
+            'GEOCODER_URL',
+            'https://api.bigdatacloud.net/data/reverse-geocode-client',
+        ),
+        'timeout' => (int) env('GEOCODER_TIMEOUT', 10),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

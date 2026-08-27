@@ -1,8 +1,10 @@
 import { Head, Link } from '@inertiajs/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { CodeAssistantDialog } from '@/components/cad/code-assistant-dialog';
 import { DrawingCanvas } from '@/components/cad/drawing-canvas';
 import { ExportDialog } from '@/components/cad/export-dialog';
 import { ImportDialog } from '@/components/cad/import-dialog';
+import { LibraryDialog } from '@/components/cad/library-dialog';
 import { OptionsBar } from '@/components/cad/options-bar';
 import { ProjectBrowser } from '@/components/cad/project-browser';
 import { ProjectInfoDialog } from '@/components/cad/project-info-dialog';
@@ -14,6 +16,7 @@ import { ScheduleView } from '@/components/cad/schedule-view';
 import { StatusBar } from '@/components/cad/status-bar';
 import { TitleBar } from '@/components/cad/title-bar';
 import { ViewControlBar } from '@/components/cad/view-control-bar';
+import { WarningsDialog } from '@/components/cad/warnings-dialog';
 import { useCadEditor } from '@/hooks/use-cad-editor';
 import type { EditorStorage } from '@/hooks/use-cad-editor';
 import { elementCategory } from '@/lib/cad/model';
@@ -30,12 +33,15 @@ type EditorProps = {
     /** The whole model, but only until the drawing has a home; then null. */
     document: CadDocument | null;
     hasLocalModel: boolean;
+    /** False until there is an OpenRouter key for the code consultant. */
+    assistantReady: boolean;
 };
 
 type WorkbenchProps = {
     project: ProjectSummary & { updated_at: string | null };
     document: CadDocument;
     storage: EditorStorage;
+    assistantReady: boolean;
 };
 
 /**
@@ -50,6 +56,7 @@ export default function Editor({
     project,
     document,
     hasLocalModel,
+    assistantReady,
 }: EditorProps) {
     const [found, setFound] = useState<Resolution>({ state: 'looking' });
 
@@ -104,6 +111,7 @@ export default function Editor({
             project={project}
             document={found.document}
             storage={found.storage}
+            assistantReady={assistantReady}
         />
     );
 }
@@ -113,7 +121,12 @@ type Resolution =
     | { state: 'away'; storage: EditorStorage }
     | { state: 'open'; document: CadDocument; storage: EditorStorage };
 
-function Workbench({ project, document, storage }: WorkbenchProps) {
+function Workbench({
+    project,
+    document,
+    storage,
+    assistantReady,
+}: WorkbenchProps) {
     const editor = useCadEditor(
         document,
         updateDocument(project.id).url,
@@ -136,6 +149,10 @@ function Workbench({ project, document, storage }: WorkbenchProps) {
     const onAction = useCallback(
         (action: RibbonAction) => {
             if (action.kind === 'tool') {
+                if (action.fixture) {
+                    editor.setFixtureCategory(action.fixture);
+                }
+
                 editor.setTool(action.tool);
 
                 return;
@@ -175,6 +192,10 @@ function Workbench({ project, document, storage }: WorkbenchProps) {
 
             if (setting === 'revealHidden') {
                 return editor.revealHidden;
+            }
+
+            if (setting === 'walkMode') {
+                return editor.walkMode;
             }
 
             return editor.settings[setting];
@@ -258,6 +279,7 @@ function Workbench({ project, document, storage }: WorkbenchProps) {
 
             <Ribbon
                 activeTool={editor.tool}
+                activeFixture={editor.fixtureCategory}
                 contextualTab={contextual}
                 isToggled={isToggled}
                 isDisabled={isDisabled}
@@ -333,6 +355,27 @@ function Workbench({ project, document, storage }: WorkbenchProps) {
                 projectName={project.name}
                 open={editor.renderOpen}
                 onOpenChange={editor.setRenderOpen}
+            />
+
+            <CodeAssistantDialog
+                editor={editor}
+                projectId={project.id}
+                jurisdiction={project.jurisdiction}
+                configured={assistantReady}
+                open={editor.codeAssistantOpen}
+                onOpenChange={editor.setCodeAssistantOpen}
+            />
+
+            <WarningsDialog
+                editor={editor}
+                open={editor.warningsOpen}
+                onOpenChange={editor.setWarningsOpen}
+            />
+
+            <LibraryDialog
+                editor={editor}
+                open={editor.libraryOpen}
+                onOpenChange={editor.setLibraryOpen}
             />
         </div>
     );
@@ -487,9 +530,20 @@ function useKeyboardShortcuts(editor: ReturnType<typeof useCadEditor>) {
             }
 
             if (event.key === 'Escape') {
+                if (editor.walkMode) {
+                    editor.exitWalkMode();
+
+                    return;
+                }
+
                 editor.setTool('select');
                 editor.clearSelection();
 
+                return;
+            }
+
+            // While walking, letters steer the camera rather than the ribbon.
+            if (editor.walkMode) {
                 return;
             }
 
@@ -516,6 +570,10 @@ function useKeyboardShortcuts(editor: ReturnType<typeof useCadEditor>) {
             buffer.current = { keys: '', at: 0 };
 
             if (action.kind === 'tool') {
+                if (action.fixture) {
+                    editor.setFixtureCategory(action.fixture);
+                }
+
                 editor.setTool(action.tool);
             } else if (action.kind === 'toggle') {
                 editor.applyToggle(action.setting);

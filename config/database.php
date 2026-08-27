@@ -162,6 +162,21 @@ return [
             // 'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', 'false'),
         ],
 
+        /*
+        | A document store beside the relational core, never instead of it.
+        |
+        | The app's records — users, projects, organizations — stay on the
+        | default connection. Mongo is for document-shaped data reached with
+        | an explicit `$connection = 'mongodb'` on the model. A single URI
+        | carries auth, replica sets and TLS options, so a managed Atlas
+        | cluster is a one-variable change.
+        */
+        'mongodb' => [
+            'driver' => 'mongodb',
+            'dsn' => env('MONGODB_URI', 'mongodb://127.0.0.1:27017'),
+            'database' => env('MONGODB_DATABASE', 'axon'),
+        ],
+
     ],
 
     /*

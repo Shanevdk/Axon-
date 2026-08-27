@@ -67,6 +67,27 @@ export function lerp(a: Point, b: Point, t: number): Point {
     return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
 }
 
+/**
+ * Corners of a `width` × `depth` rectangle centred on `centre` and turned by
+ * `rotation`, counter-clockwise from the near-left corner.
+ */
+export function rectCorners(
+    centre: Point,
+    width: number,
+    depth: number,
+    rotation: number,
+): Point[] {
+    const halfWidth = width / 2;
+    const halfDepth = depth / 2;
+
+    return [
+        { x: -halfWidth, y: -halfDepth },
+        { x: halfWidth, y: -halfDepth },
+        { x: halfWidth, y: halfDepth },
+        { x: -halfWidth, y: halfDepth },
+    ].map((corner) => rotate(add(centre, corner), rotation, centre));
+}
+
 export function midpoint(a: Point, b: Point): Point {
     return lerp(a, b, 0.5);
 }

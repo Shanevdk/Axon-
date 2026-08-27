@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useCadDocument } from '@/hooks/use-cad-document';
+import { purgeUnusedTypes } from '@/lib/cad/checkup';
+import { cleanUpDocument } from '@/lib/cad/cleanup';
 import { extractTypeLibrary } from '@/lib/cad/exchange/insert';
 import { boundsOf, boundsCenter, expandBounds } from '@/lib/cad/geometry';
 import type { Bounds } from '@/lib/cad/geometry';
@@ -7,8 +9,11 @@ import { buildModelFaces, groundFace } from '@/lib/cad/mesh';
 import {
     buildWallGeometry,
     createId,
+    toolForKind,
     wallsOnLevel,
+    withMatchedTypes,
     withoutElements,
+    withPinned,
 } from '@/lib/cad/model';
 import type { WallGeometry } from '@/lib/cad/model';
 import { buildPreview, summarise } from '@/lib/cad/preview';
@@ -23,13 +28,17 @@ import type {
     CadView,
     Camera,
     DrawMode,
+    DuctSystem,
+    FixtureCategory,
     Level,
     LocationLine,
     OrbitCamera,
+    PipeSystem,
     Point,
     RoomElement,
     ToolId,
     ViewSettings,
+    WalkCamera,
 } from '@/lib/cad/types';
 import type { DrawingVault } from '@/lib/cad/vault';
 import {
@@ -61,6 +70,9 @@ const DEFAULT_ORBIT: OrbitCamera = {
     distance: 32_000,
     target: { x: 6000, y: 4500, z: 1500 },
 };
+
+/** Standing eye height for first-person mode, in millimetres. */
+export const EYE_HEIGHT = 1600;
 
 export type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -104,6 +116,14 @@ export function useCadEditor(
     const [roofOverhang, setRoofOverhang] = useState(450);
     const [stairWidth, setStairWidth] = useState(1000);
     const [beamSize, setBeamSize] = useState({ width: 300, depth: 500 });
+    const [ductWidth, setDuctWidth] = useState(400);
+    const [ductSystem, setDuctSystem] = useState<DuctSystem>('supply');
+    const [pipeDiameter, setPipeDiameter] = useState(100);
+    const [pipeSystem, setPipeSystem] = useState<PipeSystem>('domestic');
+    const [trayWidth, setTrayWidth] = useState(300);
+    const [mepElevation, setMepElevation] = useState(2700);
+    const [fixtureCategory, setFixtureCategory] =
+        useState<FixtureCategory>('furniture');
     const [offsetDistance, setOffsetDistance] = useState(600);
     const [arrayCount, setArrayCount] = useState(4);
     const [locationLine, setLocationLine] = useState<LocationLine>('center');
@@ -112,6 +132,13 @@ export function useCadEditor(
     const [snaps, setSnaps] = useState<SnapSettings>(DEFAULT_SNAP_SETTINGS);
     const [cameras, setCameras] = useState<Record<string, Camera>>({});
     const [orbit, setOrbit] = useState<OrbitCamera>(DEFAULT_ORBIT);
+    const [walkMode, setWalkMode] = useState(false);
+    const [walk, setWalk] = useState<WalkCamera>({
+        eye: { x: 6000, y: 4500, z: EYE_HEIGHT },
+        yaw: Math.PI / 2,
+        pitch: 0,
+    });
+    const [tourPlaying, setTourPlaying] = useState(false);
     const [viewport, setViewportState] = useState({ width: 1200, height: 800 });
     const [status, setStatus] = useState('Ready');
     const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -120,6 +147,9 @@ export function useCadEditor(
     const [importOpen, setImportOpen] = useState(false);
     const [exportOpen, setExportOpen] = useState(false);
     const [renderOpen, setRenderOpen] = useState(false);
+    const [codeAssistantOpen, setCodeAssistantOpen] = useState(false);
+    const [warningsOpen, setWarningsOpen] = useState(false);
+    const [libraryOpen, setLibraryOpen] = useState(false);
     const [hidden, setHidden] = useState<Set<string>>(() => new Set());
     const [revealHidden, setRevealHidden] = useState(false);
 
@@ -253,7 +283,10 @@ export function useCadEditor(
             if (
                 element.kind === 'column' ||
                 element.kind === 'room' ||
-                element.kind === 'text'
+                element.kind === 'text' ||
+                element.kind === 'footing' ||
+                element.kind === 'fixture' ||
+                element.kind === 'spotElevation'
             ) {
                 points.push(element.p);
             }
@@ -263,12 +296,23 @@ export function useCadEditor(
                 element.kind === 'line' ||
                 element.kind === 'stair' ||
                 element.kind === 'grid' ||
-                element.kind === 'beam'
+                element.kind === 'beam' ||
+                element.kind === 'railing' ||
+                element.kind === 'brace' ||
+                element.kind === 'duct' ||
+                element.kind === 'pipe' ||
+                element.kind === 'cableTray'
             ) {
                 points.push(element.a, element.b);
             }
 
-            if (element.kind === 'roof' || element.kind === 'ceiling') {
+            if (
+                element.kind === 'roof' ||
+                element.kind === 'ceiling' ||
+                element.kind === 'pad' ||
+                element.kind === 'toposurface' ||
+                element.kind === 'propertyLine'
+            ) {
                 points.push(...element.points);
             }
         });
@@ -307,6 +351,33 @@ export function useCadEditor(
                 ? 'Ready'
                 : `${next[0].toUpperCase()}${next.slice(1)} tool`,
         );
+    }, []);
+
+    /**
+     * Drop to eye height in the middle of the level, looking the way the
+     * orbit camera was already looking, and start walking.
+     */
+    const enterWalkMode = useCallback(() => {
+        const bounds = levelBounds();
+        const centre = bounds
+            ? boundsCenter(bounds)
+            : { x: orbit.target.x, y: orbit.target.y };
+
+        setWalk({
+            eye: { x: centre.x, y: centre.y, z: level.elevation + EYE_HEIGHT },
+            yaw: orbit.azimuth + Math.PI,
+            pitch: 0,
+        });
+        setWalkMode(true);
+        setStatus(
+            'First person — WASD to walk, drag to look, Q/E for height, Shift to run, Esc to exit',
+        );
+    }, [level.elevation, levelBounds, orbit.azimuth, orbit.target]);
+
+    const exitWalkMode = useCallback(() => {
+        setWalkMode(false);
+        setTourPlaying(false);
+        setStatus('Ready');
     }, []);
 
     const clearSelection = useCallback(() => setSelection([]), []);
@@ -354,12 +425,28 @@ export function useCadEditor(
             return;
         }
 
-        store.commit('Delete', (current) =>
-            withoutElements(current, selection),
+        // Pinned elements sit out a delete the same way they sit out a move.
+        const pinned = new Set(
+            document.elements
+                .filter((element) => element.pinned)
+                .map((element) => element.id),
         );
+        const doomed = selection.filter((id) => !pinned.has(id));
+
+        if (doomed.length === 0) {
+            setStatus('Everything selected is pinned — unpin it first (UP)');
+
+            return;
+        }
+
+        store.commit('Delete', (current) => withoutElements(current, doomed));
         setSelection([]);
-        setStatus('Deleted');
-    }, [selection, store]);
+        setStatus(
+            doomed.length === selection.length
+                ? 'Deleted'
+                : `Deleted ${doomed.length} — ${selection.length - doomed.length} pinned kept`,
+        );
+    }, [document.elements, selection, store]);
 
     /** Capture the active view's settings as a named template. */
     const saveViewTemplate = useCallback(
@@ -498,9 +585,33 @@ export function useCadEditor(
                 return;
             }
 
+            if (setting === 'walkMode') {
+                if (walkMode) {
+                    exitWalkMode();
+
+                    return;
+                }
+
+                enterWalkMode();
+
+                if (activeView.kind !== 'threeD') {
+                    openView('threeD:default');
+                }
+
+                return;
+            }
+
             setViewSetting(setting, !settings[setting]);
         },
-        [setViewSetting, settings],
+        [
+            activeView.kind,
+            enterWalkMode,
+            exitWalkMode,
+            openView,
+            setViewSetting,
+            settings,
+            walkMode,
+        ],
     );
 
     /**
@@ -606,6 +717,96 @@ export function useCadEditor(
                 case 'render':
                     setRenderOpen(true);
                     break;
+                case 'askAssistant':
+                    setCodeAssistantOpen(true);
+                    break;
+                case 'pinSelection':
+                case 'unpinSelection': {
+                    if (selection.length === 0) {
+                        setStatus('Select something to pin first');
+                        break;
+                    }
+
+                    const pinning = command === 'pinSelection';
+
+                    store.commit(pinning ? 'Pin' : 'Unpin', (current) =>
+                        withPinned(current, selection, pinning),
+                    );
+                    setStatus(
+                        pinning
+                            ? `Pinned ${selection.length} — it will refuse to move until unpinned`
+                            : `Unpinned ${selection.length}`,
+                    );
+                    break;
+                }
+                case 'createSimilar': {
+                    const source = document.elements.find(
+                        (element) => element.id === selection[0],
+                    );
+                    const tool = source ? toolForKind(source.kind) : null;
+
+                    if (!source || !tool) {
+                        setStatus('Select an element to create similar');
+                        break;
+                    }
+
+                    if (source.kind === 'fixture') {
+                        setFixtureCategory(source.category);
+                    }
+
+                    setTool(tool);
+                    setStatus(`Placing more: ${tool}`);
+                    break;
+                }
+                case 'matchType': {
+                    const matched = withMatchedTypes(document, selection);
+
+                    if (matched.changed === 0) {
+                        setStatus(
+                            'Select a source element first, then the elements of the same kind to change',
+                        );
+                        break;
+                    }
+
+                    store.commit('Match type', () => matched.document);
+                    setStatus(
+                        `Matched ${matched.changed} element${matched.changed === 1 ? '' : 's'} to the first selected`,
+                    );
+                    break;
+                }
+                case 'reviewWarnings':
+                    setWarningsOpen(true);
+                    break;
+                case 'openLibrary':
+                    setLibraryOpen(true);
+                    break;
+                case 'cleanUpModel': {
+                    const cleaned = cleanUpDocument(document);
+
+                    if (cleaned.changed === 0) {
+                        setStatus('Nothing rough to clean — the model is tidy');
+                        break;
+                    }
+
+                    store.commit('Clean up model', () => cleaned.document);
+                    setSelection([]);
+                    setStatus(cleaned.fixes.join(' · '));
+                    break;
+                }
+                case 'purgeUnused': {
+                    const purged = purgeUnusedTypes(document);
+
+                    if (purged.purged === 0) {
+                        setStatus('Nothing to purge — every type is in use');
+                        break;
+                    }
+
+                    store.commit('Purge unused', () => purged.document);
+                    setStatus(
+                        `Purged ${purged.purged} unused type${purged.purged === 1 ? '' : 's'}`,
+                    );
+                    break;
+                }
                 case 'exportTypes':
                     downloadTypeLibrary(document);
                     setStatus('Type library saved');
@@ -616,6 +817,29 @@ export function useCadEditor(
                 case 'openSchedule':
                     openView('schedule:room');
                     break;
+                case 'playTour': {
+                    const path = document.elements.find(
+                        (element) =>
+                            element.kind === 'walkthrough' &&
+                            selection.includes(element.id),
+                    );
+                    const fallback = document.elements.find(
+                        (element) => element.kind === 'walkthrough',
+                    );
+
+                    if (!path && !fallback) {
+                        setStatus(
+                            'Draw a walkthrough path first — View tab, Path',
+                        );
+                        break;
+                    }
+
+                    enterWalkMode();
+                    openView('threeD:default');
+                    setTourPlaying(true);
+                    setStatus('Playing walkthrough — Esc stops the tour');
+                    break;
+                }
                 case 'export':
                     exportRequest.current += 1;
                     setExportToken(exportRequest.current);
@@ -655,12 +879,15 @@ export function useCadEditor(
             addLevel,
             deleteSelection,
             document,
+            enterWalkMode,
             hideSelection,
             isolateSelection,
             level.id,
             openView,
             resetTemporaryHide,
             save,
+            selection,
+            setTool,
             setViewSetting,
             store,
             zoomFit,
@@ -711,6 +938,14 @@ export function useCadEditor(
         setCamera,
         orbit,
         setOrbit,
+        walkMode,
+        setWalkMode,
+        walk,
+        setWalk,
+        tourPlaying,
+        setTourPlaying,
+        enterWalkMode,
+        exitWalkMode,
         viewport,
         setViewport,
         tool,
@@ -738,6 +973,20 @@ export function useCadEditor(
         setStairWidth,
         beamSize,
         setBeamSize,
+        ductWidth,
+        setDuctWidth,
+        ductSystem,
+        setDuctSystem,
+        pipeDiameter,
+        setPipeDiameter,
+        pipeSystem,
+        setPipeSystem,
+        trayWidth,
+        setTrayWidth,
+        mepElevation,
+        setMepElevation,
+        fixtureCategory,
+        setFixtureCategory,
         offsetDistance,
         setOffsetDistance,
         arrayCount,
@@ -762,6 +1011,12 @@ export function useCadEditor(
         setExportOpen,
         renderOpen,
         setRenderOpen,
+        codeAssistantOpen,
+        setCodeAssistantOpen,
+        warningsOpen,
+        setWarningsOpen,
+        libraryOpen,
+        setLibraryOpen,
         hidden,
         revealHidden,
         setRevealHidden,

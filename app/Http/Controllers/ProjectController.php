@@ -77,6 +77,7 @@ class ProjectController extends Controller
                 'number' => $project->number,
                 'client' => $project->client,
                 'address' => $project->address,
+                'jurisdiction' => $project->jurisdiction,
                 'units' => $project->units,
                 'updated_at' => $project->updated_at?->toIso8601String(),
             ],
@@ -87,6 +88,9 @@ class ProjectController extends Controller
                 ? null
                 : $starter->normalize($project->document),
             'hasLocalModel' => $project->has_local_model,
+            // The editor's code consultant is hidden rather than broken when
+            // there is no key to reach the model with.
+            'assistantReady' => filled(config('services.openrouter.key')),
         ]);
     }
 

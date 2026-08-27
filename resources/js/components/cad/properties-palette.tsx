@@ -1,20 +1,30 @@
-import { FlipHorizontal2, FlipVertical2 } from 'lucide-react';
+import { FlipHorizontal2, FlipVertical2, Pin, PinOff } from 'lucide-react';
 import { PanelHeading } from '@/components/cad/project-browser';
 import type { CadEditor } from '@/hooks/use-cad-editor';
-import { distance } from '@/lib/cad/geometry';
+import { distance, polygonArea, polygonPerimeter } from '@/lib/cad/geometry';
 import {
+    DUCT_SYSTEM_LABELS,
     elementCategory,
     elementDisplayName,
+    FIXTURE_CATEGORY_LABELS,
+    maxOpeningWidth,
+    MIN_OPENING_HEIGHT,
+    openingIsResized,
     openingSize,
+    openingTypeSize,
+    PIPE_SYSTEM_LABELS,
+    resizeOpening,
     wallTypeOf,
     withPatchedElement,
 } from '@/lib/cad/model';
 import type {
     CadElement,
     DetailLevel,
+    DuctSystem,
     ElementKind,
     LocationLine,
     OpeningElement,
+    PipeSystem,
     ViewSettings,
     VisualStyle,
 } from '@/lib/cad/types';
@@ -196,15 +206,27 @@ const VG_CATEGORIES: ElementKind[] = [
     'floor',
     'column',
     'beam',
+    'brace',
+    'footing',
     'roof',
     'ceiling',
     'stair',
     'ramp',
+    'railing',
     'room',
+    'duct',
+    'pipe',
+    'cableTray',
+    'fixture',
+    'pad',
+    'toposurface',
+    'propertyLine',
     'grid',
     'referencePlane',
     'dimension',
     'text',
+    'spotElevation',
+    'walkthrough',
     'revisionCloud',
     'section',
     'mesh',
@@ -744,6 +766,332 @@ function ElementProperties({ editor, element }: ElementPropertiesProps) {
                 </Group>
             )}
 
+            {element.kind === 'railing' && (
+                <Group title="Dimensions">
+                    <Row label="Height">
+                        <LengthField
+                            value={element.height}
+                            units={units}
+                            onCommit={(value) => patch({ height: value })}
+                        />
+                    </Row>
+                    <Row label="Length">
+                        <ReadOnly
+                            value={formatLength(
+                                distance(element.a, element.b),
+                                units,
+                            )}
+                        />
+                    </Row>
+                </Group>
+            )}
+
+            {element.kind === 'brace' && (
+                <Group title="Dimensions">
+                    <Row label="Section">
+                        <LengthField
+                            value={element.width}
+                            units={units}
+                            onCommit={(value) => patch({ width: value })}
+                        />
+                    </Row>
+                    <Row label="Rise">
+                        <LengthField
+                            value={element.rise}
+                            units={units}
+                            onCommit={(value) => patch({ rise: value })}
+                        />
+                    </Row>
+                </Group>
+            )}
+
+            {element.kind === 'footing' && (
+                <Group title="Dimensions">
+                    <Row label="Width">
+                        <LengthField
+                            value={element.width}
+                            units={units}
+                            onCommit={(value) => patch({ width: value })}
+                        />
+                    </Row>
+                    <Row label="Depth">
+                        <LengthField
+                            value={element.depth}
+                            units={units}
+                            onCommit={(value) => patch({ depth: value })}
+                        />
+                    </Row>
+                </Group>
+            )}
+
+            {element.kind === 'duct' && (
+                <>
+                    <Group title="Mechanical">
+                        <Row label="System">
+                            <Select
+                                value={element.system}
+                                options={Object.entries(DUCT_SYSTEM_LABELS).map(
+                                    ([value, label]) => ({ value, label }),
+                                )}
+                                onChange={(value) =>
+                                    patch({ system: value as DuctSystem })
+                                }
+                            />
+                        </Row>
+                    </Group>
+                    <Group title="Dimensions">
+                        <Row label="Width">
+                            <LengthField
+                                value={element.width}
+                                units={units}
+                                onCommit={(value) => patch({ width: value })}
+                            />
+                        </Row>
+                        <Row label="Elevation">
+                            <LengthField
+                                value={element.elevation}
+                                units={units}
+                                allowNegative
+                                onCommit={(value) =>
+                                    patch({ elevation: value })
+                                }
+                            />
+                        </Row>
+                    </Group>
+                </>
+            )}
+
+            {element.kind === 'pipe' && (
+                <>
+                    <Group title="Plumbing">
+                        <Row label="System">
+                            <Select
+                                value={element.system}
+                                options={Object.entries(PIPE_SYSTEM_LABELS).map(
+                                    ([value, label]) => ({ value, label }),
+                                )}
+                                onChange={(value) =>
+                                    patch({ system: value as PipeSystem })
+                                }
+                            />
+                        </Row>
+                    </Group>
+                    <Group title="Dimensions">
+                        <Row label="Diameter">
+                            <LengthField
+                                value={element.diameter}
+                                units={units}
+                                onCommit={(value) => patch({ diameter: value })}
+                            />
+                        </Row>
+                        <Row label="Elevation">
+                            <LengthField
+                                value={element.elevation}
+                                units={units}
+                                allowNegative
+                                onCommit={(value) =>
+                                    patch({ elevation: value })
+                                }
+                            />
+                        </Row>
+                    </Group>
+                </>
+            )}
+
+            {element.kind === 'cableTray' && (
+                <Group title="Dimensions">
+                    <Row label="Width">
+                        <LengthField
+                            value={element.width}
+                            units={units}
+                            onCommit={(value) => patch({ width: value })}
+                        />
+                    </Row>
+                    <Row label="Elevation">
+                        <LengthField
+                            value={element.elevation}
+                            units={units}
+                            allowNegative
+                            onCommit={(value) => patch({ elevation: value })}
+                        />
+                    </Row>
+                </Group>
+            )}
+
+            {element.kind === 'fixture' && (
+                <>
+                    <Group title="Identity Data">
+                        <Row label="Name">
+                            <TextField
+                                value={element.name}
+                                onCommit={(value) => patch({ name: value })}
+                            />
+                        </Row>
+                        <Row label="Category">
+                            <ReadOnly
+                                value={
+                                    FIXTURE_CATEGORY_LABELS[element.category]
+                                }
+                            />
+                        </Row>
+                    </Group>
+                    <Group title="Dimensions">
+                        <Row label="Width">
+                            <LengthField
+                                value={element.width}
+                                units={units}
+                                onCommit={(value) => patch({ width: value })}
+                            />
+                        </Row>
+                        <Row label="Depth">
+                            <LengthField
+                                value={element.depth}
+                                units={units}
+                                onCommit={(value) => patch({ depth: value })}
+                            />
+                        </Row>
+                        <Row label="Height">
+                            <LengthField
+                                value={element.height}
+                                units={units}
+                                onCommit={(value) => patch({ height: value })}
+                            />
+                        </Row>
+                        <Row label="Elevation">
+                            <LengthField
+                                value={element.elevation}
+                                units={units}
+                                allowNegative
+                                onCommit={(value) =>
+                                    patch({ elevation: value })
+                                }
+                            />
+                        </Row>
+                        <Row label="Rotation">
+                            <NumberField
+                                value={Math.round(
+                                    (element.rotation * 180) / Math.PI,
+                                )}
+                                onCommit={(value) =>
+                                    patch({
+                                        rotation: (value * Math.PI) / 180,
+                                    })
+                                }
+                            />
+                        </Row>
+                    </Group>
+                </>
+            )}
+
+            {element.kind === 'pad' && (
+                <Group title="Dimensions">
+                    <Row label="Thickness">
+                        <LengthField
+                            value={element.thickness}
+                            units={units}
+                            onCommit={(value) => patch({ thickness: value })}
+                        />
+                    </Row>
+                    <Row label="Area">
+                        <ReadOnly
+                            value={formatArea(
+                                polygonArea(element.points),
+                                units,
+                            )}
+                        />
+                    </Row>
+                </Group>
+            )}
+
+            {element.kind === 'toposurface' && (
+                <Group title="Dimensions">
+                    <Row label="Ground Depth">
+                        <LengthField
+                            value={element.depth}
+                            units={units}
+                            onCommit={(value) => patch({ depth: value })}
+                        />
+                    </Row>
+                    <Row label="Area">
+                        <ReadOnly
+                            value={formatArea(
+                                polygonArea(element.points),
+                                units,
+                            )}
+                        />
+                    </Row>
+                </Group>
+            )}
+
+            {element.kind === 'propertyLine' && (
+                <Group title="Dimensions">
+                    <Row label="Area">
+                        <ReadOnly
+                            value={formatArea(
+                                polygonArea(element.points),
+                                units,
+                            )}
+                        />
+                    </Row>
+                    <Row label="Perimeter">
+                        <ReadOnly
+                            value={formatLength(
+                                polygonPerimeter(element.points),
+                                units,
+                            )}
+                        />
+                    </Row>
+                </Group>
+            )}
+
+            {element.kind === 'walkthrough' && (
+                <Group title="Camera">
+                    <Row label="Eye Height">
+                        <LengthField
+                            value={element.eyeHeight}
+                            units={units}
+                            onCommit={(value) => patch({ eyeHeight: value })}
+                        />
+                    </Row>
+                    <Row label="Stops">
+                        <ReadOnly value={String(element.points.length)} />
+                    </Row>
+                    <Row label="Path Length">
+                        <ReadOnly
+                            value={formatLength(
+                                element.points.reduce(
+                                    (total, point, index) =>
+                                        index === 0
+                                            ? total
+                                            : total +
+                                              distance(
+                                                  element.points[index - 1],
+                                                  point,
+                                              ),
+                                    0,
+                                ),
+                                units,
+                            )}
+                        />
+                    </Row>
+                </Group>
+            )}
+
+            {element.kind === 'spotElevation' && (
+                <Group title="Extents">
+                    <Row label="Reports">
+                        <ReadOnly
+                            value={formatLength(
+                                document.levels.find(
+                                    (level) => level.id === element.level,
+                                )?.elevation ?? 0,
+                                units,
+                            )}
+                        />
+                    </Row>
+                </Group>
+            )}
+
             {element.kind === 'mesh' && (
                 <>
                     <Group title="Identity Data">
@@ -802,6 +1150,51 @@ function ElementProperties({ editor, element }: ElementPropertiesProps) {
                 </>
             )}
 
+            <Group title="Identity">
+                <Row label="Mark">
+                    <TextField
+                        value={element.mark ?? ''}
+                        onCommit={(value) =>
+                            patch({ mark: value.trim() || undefined })
+                        }
+                    />
+                </Row>
+                <Row label="Comments">
+                    <TextField
+                        value={element.comment ?? ''}
+                        onCommit={(value) =>
+                            patch({ comment: value.trim() || undefined })
+                        }
+                    />
+                </Row>
+                <div className="px-3 pt-1 pb-2">
+                    <button
+                        type="button"
+                        onClick={() =>
+                            patch({ pinned: element.pinned ? undefined : true })
+                        }
+                        className={cn(
+                            'flex w-full items-center justify-center gap-1.5 rounded-sm border px-2 py-1.5 text-[0.74rem] transition-colors',
+                            element.pinned
+                                ? 'border-sand text-sand hover:bg-chrome-raised'
+                                : 'border-chrome-border text-chrome-muted hover:bg-chrome-raised hover:text-chrome-fg',
+                        )}
+                    >
+                        {element.pinned ? (
+                            <>
+                                <PinOff className="size-3.5" />
+                                Pinned — release
+                            </>
+                        ) : (
+                            <>
+                                <Pin className="size-3.5" />
+                                Pin in place
+                            </>
+                        )}
+                    </button>
+                </div>
+            </Group>
+
             <div className="px-3 pt-2">
                 <button
                     type="button"
@@ -825,8 +1218,33 @@ function OpeningProperties({ editor, element, patch }: OpeningPropertiesProps) {
     const { document } = editor;
     const units = document.units;
     const size = openingSize(document, element);
+    const fromType = openingTypeSize(document, element);
+    const resized = openingIsResized(element);
     const types =
         element.kind === 'door' ? document.doorTypes : document.windowTypes;
+
+    const host = document.elements.find((item) => item.id === element.host);
+    const hostLength =
+        host?.kind === 'wall' ? distance(host.a, host.b) : Infinity;
+
+    /**
+     * Widening has to move the opening along its host as well, or a wide
+     * enough window ends up hanging off the end of the wall.
+     */
+    const setWidth = (width: number) => {
+        const next = resizeOpening(element, size.width, hostLength, width);
+
+        patch({ width: next.width, t: next.t });
+    };
+
+    /** Give the instance its type's size back. */
+    const useTypeSize = () =>
+        patch({
+            width: undefined,
+            height: undefined,
+            sillHeight: undefined,
+            t: resizeOpening(element, size.width, hostLength, fromType.width).t,
+        });
 
     return (
         <>
@@ -842,7 +1260,16 @@ function OpeningProperties({ editor, element, patch }: OpeningPropertiesProps) {
                             value: type.id,
                             label: type.name,
                         }))}
-                        onChange={(value) => patch({ typeId: value })}
+                        // Picking a new type means taking its size with it,
+                        // so any instance resize is dropped here.
+                        onChange={(value) =>
+                            patch({
+                                typeId: value,
+                                width: undefined,
+                                height: undefined,
+                                sillHeight: undefined,
+                            })
+                        }
                     />
                 </Row>
             </Group>
@@ -869,26 +1296,82 @@ function OpeningProperties({ editor, element, patch }: OpeningPropertiesProps) {
                         </span>
                     </div>
                 </Row>
-                <Row label="Sill Height">
-                    <ReadOnly value={formatLength(size.sillHeight, units)} />
+                <Row
+                    label={rowLabel(
+                        'Sill Height',
+                        element.kind === 'window' &&
+                            element.sillHeight !== undefined,
+                    )}
+                >
+                    {element.kind === 'window' ? (
+                        <LengthField
+                            value={size.sillHeight}
+                            units={units}
+                            allowNegative
+                            onCommit={(value) => patch({ sillHeight: value })}
+                        />
+                    ) : (
+                        <ReadOnly
+                            value={formatLength(size.sillHeight, units)}
+                        />
+                    )}
                 </Row>
                 <Row label="Head Height">
-                    <ReadOnly
-                        value={formatLength(
-                            size.sillHeight + size.height,
-                            units,
-                        )}
+                    <LengthField
+                        value={size.sillHeight + size.height}
+                        units={units}
+                        onCommit={(value) =>
+                            patch({
+                                height: Math.max(
+                                    MIN_OPENING_HEIGHT,
+                                    value - size.sillHeight,
+                                ),
+                            })
+                        }
                     />
                 </Row>
             </Group>
 
             <Group title="Dimensions">
-                <Row label="Width">
-                    <ReadOnly value={formatLength(size.width, units)} />
+                <Row label={rowLabel('Width', element.width !== undefined)}>
+                    <LengthField
+                        value={size.width}
+                        units={units}
+                        onCommit={setWidth}
+                    />
                 </Row>
-                <Row label="Height">
-                    <ReadOnly value={formatLength(size.height, units)} />
+                <Row label={rowLabel('Height', element.height !== undefined)}>
+                    <LengthField
+                        value={size.height}
+                        units={units}
+                        onCommit={(value) =>
+                            patch({
+                                height: Math.max(MIN_OPENING_HEIGHT, value),
+                            })
+                        }
+                    />
                 </Row>
+
+                {resized ? (
+                    <div className="px-3 pt-1 pb-2">
+                        <button
+                            type="button"
+                            onClick={useTypeSize}
+                            className="w-full rounded-sm border border-chrome-border px-2 py-1.5 text-[0.72rem] text-chrome-muted transition-colors hover:bg-chrome-raised hover:text-chrome-fg"
+                        >
+                            Back to type size ·{' '}
+                            {formatLength(fromType.width, units)} ×{' '}
+                            {formatLength(fromType.height, units)}
+                        </button>
+                    </div>
+                ) : (
+                    <p className="px-3 pt-1 pb-2 text-[0.68rem] text-chrome-muted">
+                        Following {typeNameOf(types, element.typeId)}. Type a
+                        size here and only this one changes.
+                        {Number.isFinite(hostLength) &&
+                            ` The wall allows ${formatLength(maxOpeningWidth(hostLength), units)}.`}
+                    </p>
+                )}
             </Group>
 
             <Group title="Orientation">
@@ -917,6 +1400,21 @@ function OpeningProperties({ editor, element, patch }: OpeningPropertiesProps) {
             </Group>
         </>
     );
+}
+
+/**
+ * Mark a row whose value has been set on this instance rather than inherited
+ * from its type, the way Revit greys type parameters apart from instance ones.
+ */
+function rowLabel(label: string, overridden: boolean): string {
+    return overridden ? `${label} ✎` : label;
+}
+
+function typeNameOf(
+    types: { id: string; name: string }[],
+    typeId: string,
+): string {
+    return types.find((type) => type.id === typeId)?.name ?? 'its type';
 }
 
 function hostLabel(editor: CadEditor, element: OpeningElement): string {

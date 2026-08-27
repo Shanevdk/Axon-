@@ -11,11 +11,13 @@ import type {
     RibbonTab,
     ToggleId,
 } from '@/lib/cad/ribbon';
-import type { ToolId } from '@/lib/cad/types';
+import type { FixtureCategory, ToolId } from '@/lib/cad/types';
 import { cn } from '@/lib/utils';
 
 type RibbonProps = {
     activeTool: ToolId;
+    /** Which component category the fixture tool is armed with. */
+    activeFixture: FixtureCategory;
     /** Present while something is selected; takes focus when it appears. */
     contextualTab: RibbonTab | null;
     isToggled: (setting: ToggleId) => boolean;
@@ -25,6 +27,7 @@ type RibbonProps = {
 
 export function Ribbon({
     activeTool,
+    activeFixture,
     contextualTab,
     isToggled,
     isDisabled,
@@ -106,6 +109,7 @@ export function Ribbon({
                                             active={isActive(
                                                 button,
                                                 activeTool,
+                                                activeFixture,
                                                 isToggled,
                                             )}
                                             disabled={isDisabled(button.action)}
@@ -129,6 +133,7 @@ export function Ribbon({
                                                 active={isActive(
                                                     button,
                                                     activeTool,
+                                                    activeFixture,
                                                     isToggled,
                                                 )}
                                                 disabled={isDisabled(
@@ -154,10 +159,15 @@ export function Ribbon({
 function isActive(
     button: RibbonButton,
     activeTool: ToolId,
+    activeFixture: FixtureCategory,
     isToggled: (setting: ToggleId) => boolean,
 ): boolean {
     if (button.action.kind === 'tool') {
-        return button.action.tool === activeTool;
+        return (
+            button.action.tool === activeTool &&
+            (button.action.fixture === undefined ||
+                button.action.fixture === activeFixture)
+        );
     }
 
     if (button.action.kind === 'toggle') {

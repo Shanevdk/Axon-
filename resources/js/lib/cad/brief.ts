@@ -292,9 +292,13 @@ function glazingRatio(
     }
 
     const glassArea = windows.reduce((total, window) => {
+        // An instance may have been resized away from its type, so the size
+        // is resolved rather than read straight off the catalogue.
         const type = types.get(window.typeId);
+        const width = window.width ?? type?.width ?? 0;
+        const height = window.height ?? type?.height ?? 0;
 
-        return total + (type ? type.width * type.height : 0);
+        return total + width * height;
     }, 0);
 
     return glassArea / wallArea;

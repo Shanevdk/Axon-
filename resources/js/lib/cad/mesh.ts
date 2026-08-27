@@ -29,6 +29,14 @@ const MATERIALS: Record<SolidCategory, string> = {
     ceiling: MODEL_MATERIALS.wallInterior,
     stair: MODEL_MATERIALS.column,
     beam: MODEL_MATERIALS.frame,
+    railing: MODEL_MATERIALS.railing,
+    foundation: MODEL_MATERIALS.foundation,
+    duct: MODEL_MATERIALS.duct,
+    pipe: MODEL_MATERIALS.pipe,
+    cableTray: MODEL_MATERIALS.cableTray,
+    fixture: MODEL_MATERIALS.fixture,
+    planting: MODEL_MATERIALS.planting,
+    site: MODEL_MATERIALS.site,
 };
 
 /**
@@ -56,7 +64,12 @@ export function buildModelFaces(document: CadDocument): Face[] {
                     vertices: piece,
                     color,
                     elementId: solid.elementId,
-                    layer: solid.category === 'floor' ? 1 : 2,
+                    layer:
+                        solid.category === 'floor' ||
+                        solid.category === 'site' ||
+                        solid.category === 'foundation'
+                            ? 1
+                            : 2,
                     order: solid.base,
                     opacity: solid.category === 'window' ? 0.55 : undefined,
                 });

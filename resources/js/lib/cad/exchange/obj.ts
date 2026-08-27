@@ -12,6 +12,14 @@ const MATERIAL_NAMES: Record<SolidCategory, string> = {
     ceiling: 'VH_Ceiling',
     stair: 'VH_Stair',
     beam: 'VH_Framing',
+    railing: 'VH_Railing',
+    foundation: 'VH_Foundation',
+    duct: 'VH_Duct',
+    pipe: 'VH_Pipe',
+    cableTray: 'VH_CableTray',
+    fixture: 'VH_Component',
+    planting: 'VH_Planting',
+    site: 'VH_Site',
 };
 
 const MATERIAL_COLOURS: Record<SolidCategory, string> = {
@@ -25,6 +33,14 @@ const MATERIAL_COLOURS: Record<SolidCategory, string> = {
     ceiling: MODEL_MATERIALS.wallInterior,
     stair: MODEL_MATERIALS.column,
     beam: MODEL_MATERIALS.frame,
+    railing: MODEL_MATERIALS.railing,
+    foundation: MODEL_MATERIALS.foundation,
+    duct: MODEL_MATERIALS.duct,
+    pipe: MODEL_MATERIALS.pipe,
+    cableTray: MODEL_MATERIALS.cableTray,
+    fixture: MODEL_MATERIALS.fixture,
+    planting: MODEL_MATERIALS.planting,
+    site: MODEL_MATERIALS.site,
 };
 
 export type ObjResult = {

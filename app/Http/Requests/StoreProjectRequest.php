@@ -20,6 +20,7 @@ class StoreProjectRequest extends FormRequest
             'number' => ['nullable', 'string', 'max:40'],
             'client' => ['nullable', 'string', 'max:120'],
             'address' => ['nullable', 'string', 'max:200'],
+            'jurisdiction' => ['nullable', 'string', 'max:160'],
             'units' => ['required', Rule::in(['metric', 'imperial'])],
             'template' => ['required', Rule::in(['blank', 'residence'])],
         ];

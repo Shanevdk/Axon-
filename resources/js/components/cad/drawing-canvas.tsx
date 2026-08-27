@@ -9,6 +9,7 @@ import {
     distance,
     intersectSegments,
     projectOnSegment,
+    rectCorners,
     scale,
     subtract,
 } from '@/lib/cad/geometry';
@@ -27,6 +28,8 @@ import {
     createId,
     doorTypeOf,
     elementCategory,
+    FIXTURE_PRESETS,
+    fixtureFootprint,
     hitTest,
     hitTestCandidates,
     mirrorElements,
@@ -46,7 +49,14 @@ import {
     splitWall,
     trimExtendToCorner,
 } from '@/lib/cad/modify';
-import { draw3d, fitCamera, pickAt } from '@/lib/cad/render-3d';
+import {
+    draw3d,
+    fitCamera,
+    pickAt,
+    tourLength,
+    tourPose,
+    walkOrbit,
+} from '@/lib/cad/render-3d';
 import type { PickTarget } from '@/lib/cad/render-3d';
 import {
     drawPlan,
@@ -65,6 +75,7 @@ import type {
     Point,
     SnapResult,
     ToolId,
+    WalkthroughElement,
 } from '@/lib/cad/types';
 import {
     drawingIncrement,
@@ -92,6 +103,35 @@ const NO_SNAPS: SnapSettings = {
     grid: false,
 };
 
+/** Tools that sketch a closed boundary, finished by closing or Enter. */
+const SKETCH_TOOLS: ToolId[] = [
+    'floor',
+    'roof',
+    'ceiling',
+    'revisionCloud',
+    'pad',
+    'toposurface',
+    'propertyLine',
+];
+
+/** Tools placed by two clicks along a run. */
+type TwoPointPurpose =
+    | 'dimension'
+    | 'line'
+    | 'measure'
+    | 'mirror'
+    | 'stair'
+    | 'grid'
+    | 'beam'
+    | 'ramp'
+    | 'referencePlane'
+    | 'section'
+    | 'railing'
+    | 'brace'
+    | 'duct'
+    | 'pipe'
+    | 'cableTray';
+
 type Pending =
     | { kind: 'none' }
     | { kind: 'chain'; points: Point[]; closable: boolean }
@@ -99,17 +139,7 @@ type Pending =
     | {
           kind: 'twoPoint';
           start: Point;
-          purpose:
-              | 'dimension'
-              | 'line'
-              | 'measure'
-              | 'mirror'
-              | 'stair'
-              | 'grid'
-              | 'beam'
-              | 'ramp'
-              | 'referencePlane'
-              | 'section';
+          purpose: TwoPointPurpose;
       }
     | { kind: 'pickElement'; firstId: string; purpose: 'trim' | 'align' }
     | { kind: 'transform'; base: Point; purpose: 'move' | 'copy' | 'array' }
@@ -124,6 +154,7 @@ type Drag =
           screen: Point;
           target: { x: number; y: number; z: number };
       }
+    | { kind: 'look'; screen: Point; yaw: number; pitch: number }
     | { kind: 'marquee'; start: Point; current: Point }
     | { kind: 'moveSelection'; start: Point; current: Point; moved: boolean }
     | { kind: 'grip'; grip: Grip; current: Point };
@@ -175,9 +206,17 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
         camera,
         orbit,
         setViewport,
+        // Stable useState setters, so the walk effects survive re-renders.
+        setWalk,
+        setTourPlaying,
+        setStatus,
     } = editor;
     const isModelView =
         activeView.kind === 'threeD' || activeView.kind === 'elevation';
+    /** First person only makes sense inside the perspective 3D view. */
+    const walking = editor.walkMode && activeView.kind === 'threeD';
+    /** Keys held down while walking, drained by the movement loop. */
+    const heldKeys = useRef<Set<string>>(new Set());
 
     // Arming a different tool, or changing view, abandons whatever was half drawn.
     const [context, setContext] = useState(
@@ -326,7 +365,7 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
                 ctx,
                 {
                     faces: editor.faces,
-                    camera: orbit,
+                    camera: walking ? walkOrbit(editor.walk) : orbit,
                     projection:
                         activeView.kind === 'elevation'
                             ? 'orthographic'
@@ -419,14 +458,14 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
                 thickness,
             }));
 
-            if (
-                editor.tool === 'floor' ||
-                editor.tool === 'roof' ||
-                editor.tool === 'ceiling' ||
-                editor.tool === 'revisionCloud'
-            ) {
+            if (SKETCH_TOOLS.includes(editor.tool)) {
                 overlay.previewWalls = undefined;
                 overlay.previewPolygon = points;
+            }
+
+            if (editor.tool === 'walkthrough') {
+                overlay.previewWalls = undefined;
+                overlay.previewPath = points;
             }
         }
 
@@ -486,14 +525,24 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
             }
         }
 
-        if (editor.tool === 'column') {
-            const half = 400 / 2;
+        if (editor.tool === 'column' || editor.tool === 'footing') {
+            const half = (editor.tool === 'column' ? 400 : 900) / 2;
             overlay.previewPolygon = [
                 { x: target.x - half, y: target.y - half },
                 { x: target.x + half, y: target.y - half },
                 { x: target.x + half, y: target.y + half },
                 { x: target.x - half, y: target.y + half },
             ];
+        }
+
+        if (editor.tool === 'fixture') {
+            const preset = FIXTURE_PRESETS[editor.fixtureCategory];
+            overlay.previewPolygon = rectCorners(
+                target,
+                preset.width,
+                preset.depth,
+                0,
+            );
         }
 
         return overlay;
@@ -585,6 +634,22 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
     const handleModelPointerMove = (
         event: React.PointerEvent<HTMLCanvasElement>,
     ) => {
+        if (drag?.kind === 'look') {
+            const local = localPoint(event);
+
+            editor.setWalk((current) => ({
+                ...current,
+                yaw: drag.yaw - (local.x - drag.screen.x) * 0.005,
+                pitch: clamp(
+                    drag.pitch - (local.y - drag.screen.y) * 0.004,
+                    -1.4,
+                    1.4,
+                ),
+            }));
+
+            return;
+        }
+
         if (drag?.kind === 'orbit') {
             const local = localPoint(event);
             editor.setOrbit({
@@ -636,6 +701,19 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
         }
 
         if (isModelView) {
+            if (walking) {
+                // Grabbing the view interrupts a playing tour.
+                editor.setTourPlaying(false);
+                setDrag({
+                    kind: 'look',
+                    screen: localPoint(event),
+                    yaw: editor.walk.yaw,
+                    pitch: editor.walk.pitch,
+                });
+
+                return;
+            }
+
             if (event.button === 1 || event.shiftKey) {
                 setDrag({
                     kind: 'orbitPan',
@@ -856,6 +934,9 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
             case 'roof':
             case 'ceiling':
             case 'revisionCloud':
+            case 'pad':
+            case 'toposurface':
+            case 'propertyLine':
                 handleSketchClick(worldPoint);
                 break;
             case 'stair':
@@ -864,6 +945,11 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
             case 'ramp':
             case 'referencePlane':
             case 'section':
+            case 'railing':
+            case 'brace':
+            case 'duct':
+            case 'pipe':
+            case 'cableTray':
                 handleTwoPointClick(worldPoint, tool);
                 break;
             case 'trim':
@@ -882,6 +968,25 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
                 break;
             case 'column':
                 placeColumn(worldPoint);
+                break;
+            case 'footing':
+                placeFooting(worldPoint);
+                break;
+            case 'fixture':
+                placeFixture(worldPoint);
+                break;
+            case 'spotElevation':
+                placeSpotElevation(worldPoint);
+                break;
+            case 'walkthrough':
+                setPending({
+                    kind: 'chain',
+                    points: [
+                        ...(pending.kind === 'chain' ? pending.points : []),
+                        worldPoint,
+                    ],
+                    closable: false,
+                });
                 break;
             case 'room':
                 placeRoom(worldPoint);
@@ -1064,6 +1169,44 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
                     ]),
                 );
                 editor.setStatus('Ceiling created');
+            } else if (tool === 'pad') {
+                commit('Create building pad', (current) =>
+                    withElements(current, [
+                        {
+                            id: createId('pad'),
+                            kind: 'pad',
+                            level: level.id,
+                            points,
+                            thickness: 300,
+                        },
+                    ]),
+                );
+                editor.setStatus('Building pad created');
+            } else if (tool === 'toposurface') {
+                commit('Create toposurface', (current) =>
+                    withElements(current, [
+                        {
+                            id: createId('topo'),
+                            kind: 'toposurface',
+                            level: level.id,
+                            points,
+                            depth: 300,
+                        },
+                    ]),
+                );
+                editor.setStatus('Toposurface created');
+            } else if (tool === 'propertyLine') {
+                commit('Create property line', (current) =>
+                    withElements(current, [
+                        {
+                            id: createId('propline'),
+                            kind: 'propertyLine',
+                            level: level.id,
+                            points,
+                        },
+                    ]),
+                );
+                editor.setStatus('Property line created');
             } else {
                 commit('Create floor', (current) =>
                     withElements(current, [
@@ -1133,6 +1276,85 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
         editor.setStatus('Column placed');
     }
 
+    function placeFooting(worldPoint: Point) {
+        commit('Place footing', (current) =>
+            withElements(current, [
+                {
+                    id: createId('footing'),
+                    kind: 'footing',
+                    level: level.id,
+                    p: worldPoint,
+                    width: 900,
+                    depth: 300,
+                },
+            ]),
+        );
+        editor.setStatus('Footing placed');
+    }
+
+    function placeFixture(worldPoint: Point) {
+        const category = editor.fixtureCategory;
+        const preset = FIXTURE_PRESETS[category];
+
+        commit('Place component', (current) =>
+            withElements(current, [
+                {
+                    id: createId('fixture'),
+                    kind: 'fixture',
+                    level: level.id,
+                    p: worldPoint,
+                    rotation: 0,
+                    category,
+                    name: preset.name,
+                    width: preset.width,
+                    depth: preset.depth,
+                    height: preset.height,
+                    elevation: preset.elevation,
+                },
+            ]),
+        );
+        editor.setStatus(`${preset.name} placed`);
+    }
+
+    function placeSpotElevation(worldPoint: Point) {
+        commit('Place spot elevation', (current) =>
+            withElements(current, [
+                {
+                    id: createId('spot'),
+                    kind: 'spotElevation',
+                    level: level.id,
+                    p: worldPoint,
+                },
+            ]),
+        );
+        editor.setStatus('Spot elevation placed');
+    }
+
+    function finishWalkthrough(points: Point[]) {
+        if (points.length < 2) {
+            editor.setStatus('A walkthrough needs at least two stops');
+            setPending({ kind: 'none' });
+
+            return;
+        }
+
+        commit('Create walkthrough', (current) =>
+            withElements(current, [
+                {
+                    id: createId('walkthrough'),
+                    kind: 'walkthrough',
+                    level: level.id,
+                    points,
+                    eyeHeight: 1600,
+                },
+            ]),
+        );
+        setPending({ kind: 'none' });
+        editor.setStatus(
+            'Walkthrough created — Play Tour on the View tab walks it',
+        );
+    }
+
     function placeRoom(worldPoint: Point) {
         commit('Place room', (current) =>
             withElements(current, [
@@ -1149,20 +1371,7 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
         editor.setStatus('Room placed');
     }
 
-    function handleTwoPointClick(
-        worldPoint: Point,
-        purpose:
-            | 'dimension'
-            | 'line'
-            | 'measure'
-            | 'mirror'
-            | 'stair'
-            | 'grid'
-            | 'beam'
-            | 'ramp'
-            | 'referencePlane'
-            | 'section',
-    ) {
+    function handleTwoPointClick(worldPoint: Point, purpose: TwoPointPurpose) {
         if (pending.kind !== 'twoPoint') {
             setPending({ kind: 'twoPoint', start: worldPoint, purpose });
 
@@ -1186,7 +1395,12 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
             purpose === 'beam' ||
             purpose === 'ramp' ||
             purpose === 'referencePlane' ||
-            purpose === 'section'
+            purpose === 'section' ||
+            purpose === 'railing' ||
+            purpose === 'brace' ||
+            purpose === 'duct' ||
+            purpose === 'pipe' ||
+            purpose === 'cableTray'
         ) {
             createLinearElement(purpose, start, worldPoint);
             setPending({ kind: 'none' });
@@ -1238,16 +1452,121 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
     }
 
     /**
-     * Stairs, grids and beams are all placed by two clicks along their run.
+     * Stairs, grids, beams, railings and service runs are all placed by two
+     * clicks along their run.
      */
     function createLinearElement(
-        purpose:
-            'stair' | 'grid' | 'beam' | 'ramp' | 'referencePlane' | 'section',
+        purpose: Exclude<
+            TwoPointPurpose,
+            'dimension' | 'line' | 'measure' | 'mirror'
+        >,
         start: Point,
         end: Point,
     ) {
         if (distance(start, end) < 100) {
             editor.setStatus('Pick two points further apart');
+
+            return;
+        }
+
+        if (purpose === 'railing') {
+            commit('Create railing', (current) =>
+                withElements(current, [
+                    {
+                        id: createId('railing'),
+                        kind: 'railing',
+                        level: level.id,
+                        a: start,
+                        b: end,
+                        height: 1000,
+                    },
+                ]),
+            );
+            editor.setStatus('Railing created');
+
+            return;
+        }
+
+        if (purpose === 'brace') {
+            const levels = model.levels;
+            const index = levels.findIndex((item) => item.id === level.id);
+            const above = levels[index + 1];
+
+            commit('Create brace', (current) =>
+                withElements(current, [
+                    {
+                        id: createId('brace'),
+                        kind: 'brace',
+                        level: level.id,
+                        a: start,
+                        b: end,
+                        width: 150,
+                        rise: above
+                            ? above.elevation - level.elevation
+                            : editor.wallHeight,
+                    },
+                ]),
+            );
+            editor.setStatus('Brace created');
+
+            return;
+        }
+
+        if (purpose === 'duct') {
+            commit('Create duct', (current) =>
+                withElements(current, [
+                    {
+                        id: createId('duct'),
+                        kind: 'duct',
+                        level: level.id,
+                        a: start,
+                        b: end,
+                        width: editor.ductWidth,
+                        elevation: editor.mepElevation,
+                        system: editor.ductSystem,
+                    },
+                ]),
+            );
+            editor.setStatus('Duct created');
+
+            return;
+        }
+
+        if (purpose === 'pipe') {
+            commit('Create pipe', (current) =>
+                withElements(current, [
+                    {
+                        id: createId('pipe'),
+                        kind: 'pipe',
+                        level: level.id,
+                        a: start,
+                        b: end,
+                        diameter: editor.pipeDiameter,
+                        elevation: editor.mepElevation,
+                        system: editor.pipeSystem,
+                    },
+                ]),
+            );
+            editor.setStatus('Pipe created');
+
+            return;
+        }
+
+        if (purpose === 'cableTray') {
+            commit('Create cable tray', (current) =>
+                withElements(current, [
+                    {
+                        id: createId('tray'),
+                        kind: 'cableTray',
+                        level: level.id,
+                        a: start,
+                        b: end,
+                        width: editor.trayWidth,
+                        elevation: editor.mepElevation,
+                    },
+                ]),
+            );
+            editor.setStatus('Cable tray created');
 
             return;
         }
@@ -1607,6 +1926,11 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
                 return;
             }
 
+            // First person owns the keyboard; the walk effect handles it.
+            if (walking) {
+                return;
+            }
+
             if (event.key === 'Escape') {
                 // First Escape abandons the sketch, a second clears the
                 // selection and drops back to Modify, as Revit does.
@@ -1626,13 +1950,10 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
             }
 
             if (event.key === 'Enter' && pending.kind === 'chain') {
-                if (
-                    editor.tool === 'floor' ||
-                    editor.tool === 'roof' ||
-                    editor.tool === 'ceiling' ||
-                    editor.tool === 'revisionCloud'
-                ) {
+                if (SKETCH_TOOLS.includes(editor.tool)) {
                     finishSketch(pending.points);
+                } else if (editor.tool === 'walkthrough') {
+                    finishWalkthrough(pending.points);
                 } else if (pending.points.length >= 2) {
                     createWallsFromChain(pending.points);
                 }
@@ -1771,6 +2092,22 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
         const onWheel = (event: WheelEvent) => {
             event.preventDefault();
 
+            if (walking) {
+                // The wheel strides along the look direction.
+                const stride = event.deltaY > 0 ? -600 : 600;
+
+                editor.setWalk((current) => ({
+                    ...current,
+                    eye: {
+                        x: current.eye.x + Math.cos(current.yaw) * stride,
+                        y: current.eye.y + Math.sin(current.yaw) * stride,
+                        z: current.eye.z,
+                    },
+                }));
+
+                return;
+            }
+
             if (isModelView) {
                 editor.setOrbit({
                     ...orbit,
@@ -1813,7 +2150,216 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
         canvas.addEventListener('wheel', onWheel, { passive: false });
 
         return () => canvas.removeEventListener('wheel', onWheel);
-    }, [editor, isModelView, orbit, viewport]);
+    }, [editor, isModelView, orbit, viewport, walking]);
+
+    /* ------------------------------------------------------- first person */
+
+    // WASD movement, held keys drained by an animation loop so walking is
+    // smooth rather than stepped by key repeat.
+    useEffect(() => {
+        const held = heldKeys.current;
+
+        if (!walking) {
+            held.clear();
+
+            return;
+        }
+
+        const MOVE_KEYS = new Set([
+            'w',
+            'a',
+            's',
+            'd',
+            'q',
+            'e',
+            'arrowup',
+            'arrowdown',
+            'arrowleft',
+            'arrowright',
+        ]);
+
+        const isTyping = (target: EventTarget | null): boolean => {
+            const node = target as HTMLElement | null;
+
+            return (
+                !!node &&
+                (node.tagName === 'INPUT' ||
+                    node.tagName === 'TEXTAREA' ||
+                    node.isContentEditable)
+            );
+        };
+
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (isTyping(event.target) || event.ctrlKey || event.metaKey) {
+                return;
+            }
+
+            const key = event.key.toLowerCase();
+
+            if (MOVE_KEYS.has(key)) {
+                held.add(key);
+                setTourPlaying(false);
+                event.preventDefault();
+            }
+
+            if (event.shiftKey) {
+                held.add('shift');
+            }
+        };
+
+        const onKeyUp = (event: KeyboardEvent) => {
+            held.delete(event.key.toLowerCase());
+
+            if (!event.shiftKey) {
+                held.delete('shift');
+            }
+        };
+
+        let frame = 0;
+        let last = performance.now();
+
+        const step = (now: number) => {
+            const dt = Math.min((now - last) / 1000, 0.1);
+            last = now;
+
+            const keys = held;
+            let forward = 0;
+            let strafe = 0;
+            let vertical = 0;
+
+            if (keys.has('w') || keys.has('arrowup')) {
+                forward += 1;
+            }
+
+            if (keys.has('s') || keys.has('arrowdown')) {
+                forward -= 1;
+            }
+
+            if (keys.has('d') || keys.has('arrowright')) {
+                strafe += 1;
+            }
+
+            if (keys.has('a') || keys.has('arrowleft')) {
+                strafe -= 1;
+            }
+
+            if (keys.has('e')) {
+                vertical += 1;
+            }
+
+            if (keys.has('q')) {
+                vertical -= 1;
+            }
+
+            if (forward !== 0 || strafe !== 0 || vertical !== 0) {
+                const speed = keys.has('shift') ? 4500 : 1800;
+
+                setWalk((current) => {
+                    const cos = Math.cos(current.yaw);
+                    const sin = Math.sin(current.yaw);
+
+                    return {
+                        ...current,
+                        eye: {
+                            x:
+                                current.eye.x +
+                                (cos * forward + sin * strafe) * speed * dt,
+                            y:
+                                current.eye.y +
+                                (sin * forward - cos * strafe) * speed * dt,
+                            z: current.eye.z + vertical * speed * dt * 0.6,
+                        },
+                    };
+                });
+            }
+
+            frame = requestAnimationFrame(step);
+        };
+
+        frame = requestAnimationFrame(step);
+        window.addEventListener('keydown', onKeyDown);
+        window.addEventListener('keyup', onKeyUp);
+
+        return () => {
+            cancelAnimationFrame(frame);
+            window.removeEventListener('keydown', onKeyDown);
+            window.removeEventListener('keyup', onKeyUp);
+            held.clear();
+        };
+    }, [setTourPlaying, setWalk, walking]);
+
+    // Playing a tour drives the walk camera along the walkthrough path.
+    useEffect(() => {
+        if (!editor.tourPlaying || !walking) {
+            return;
+        }
+
+        const path =
+            model.elements.find(
+                (element): element is WalkthroughElement =>
+                    element.kind === 'walkthrough' &&
+                    editor.selection.includes(element.id),
+            ) ??
+            model.elements.find(
+                (element): element is WalkthroughElement =>
+                    element.kind === 'walkthrough',
+            );
+
+        if (!path || path.points.length < 2) {
+            setTourPlaying(false);
+
+            return;
+        }
+
+        const elevation =
+            model.levels.find((item) => item.id === path.level)?.elevation ?? 0;
+        const z = elevation + path.eyeHeight;
+        const total = tourLength(path.points);
+        const SPEED = 1500;
+
+        if (total < 1) {
+            setTourPlaying(false);
+
+            return;
+        }
+
+        let frame = 0;
+        const startedAt = performance.now();
+
+        const step = (now: number) => {
+            const along = ((now - startedAt) / 1000) * SPEED;
+            const pose = tourPose(path.points, along);
+
+            if (pose) {
+                setWalk({
+                    eye: { x: pose.position.x, y: pose.position.y, z },
+                    yaw: pose.yaw,
+                    pitch: 0,
+                });
+            }
+
+            if (along >= total) {
+                setTourPlaying(false);
+                setStatus('Walkthrough finished — Esc leaves the walk');
+
+                return;
+            }
+
+            frame = requestAnimationFrame(step);
+        };
+
+        frame = requestAnimationFrame(step);
+
+        return () => cancelAnimationFrame(frame);
+    }, [
+        editor.tourPlaying,
+        editor.selection,
+        model,
+        setStatus,
+        setTourPlaying,
+        setWalk,
+        walking,
+    ]);
 
     const zoomBy = (factor: number) => {
         if (isModelView) {
@@ -1935,7 +2481,7 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
                 />
             </div>
 
-            {isModelView && (
+            {isModelView && !walking && (
                 <ViewCube
                     camera={orbit}
                     onOrient={(azimuth, elevation) =>
@@ -1951,6 +2497,14 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
                         )
                     }
                 />
+            )}
+
+            {walking && (
+                <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-sm bg-ink/85 px-3 py-1.5 text-[0.72rem] tracking-wide text-paper">
+                    {editor.tourPlaying
+                        ? 'Playing walkthrough — drag or press a key to take over, Esc to exit'
+                        : 'W A S D walk · drag to look · Q / E height · Shift run · Esc exit'}
+                </div>
             )}
 
             {shiftHeld && !isModelView && (
@@ -2157,6 +2711,18 @@ function CanvasContextMenu({
             dimension: 'dimension',
             text: 'text',
             line: 'line',
+            railing: 'railing',
+            brace: 'brace',
+            footing: 'footing',
+            duct: 'duct',
+            pipe: 'pipe',
+            cableTray: 'cableTray',
+            fixture: 'fixture',
+            pad: 'pad',
+            toposurface: 'toposurface',
+            propertyLine: 'propertyLine',
+            spotElevation: 'spotElevation',
+            walkthrough: 'walkthrough',
         };
 
         const tool = element ? tools[element.kind] : undefined;
@@ -2411,6 +2977,7 @@ function elementPoints(editor: CadEditor, element: CadElement): Point[] {
         }
         case 'room':
         case 'text':
+        case 'spotElevation':
             return [element.p];
         case 'dimension':
         case 'line':
@@ -2421,10 +2988,31 @@ function elementPoints(editor: CadEditor, element: CadElement): Point[] {
         case 'ramp':
         case 'referencePlane':
         case 'section':
+        case 'railing':
+        case 'brace':
+        case 'duct':
+        case 'pipe':
+        case 'cableTray':
             return [element.a, element.b];
+        case 'footing': {
+            const half = element.width / 2;
+
+            return [
+                { x: element.p.x - half, y: element.p.y - half },
+                { x: element.p.x + half, y: element.p.y - half },
+                { x: element.p.x + half, y: element.p.y + half },
+                { x: element.p.x - half, y: element.p.y + half },
+            ];
+        }
+        case 'fixture':
+            return fixtureFootprint(element);
         case 'roof':
         case 'ceiling':
         case 'revisionCloud':
+        case 'pad':
+        case 'toposurface':
+        case 'propertyLine':
+        case 'walkthrough':
             return element.points;
         case 'mesh':
             return placedFootprint(element);

@@ -53,6 +53,23 @@ class AskOpenRouter
      */
     public function handle(array $messages): string
     {
+        return $this->ask(self::SYSTEM_PROMPT, $messages);
+    }
+
+    /**
+     * Ask under a brief of the caller's choosing.
+     *
+     * The general assistant and the editor's code consultant differ only in
+     * what they are told they are, so the transport — the key check, the
+     * history clip, the error wording — is shared and only the system message
+     * changes.
+     *
+     * @param  list<array{role: string, content: string}>  $messages
+     *
+     * @throws RuntimeException when the assistant is unconfigured or upstream fails
+     */
+    public function ask(string $systemPrompt, array $messages): string
+    {
         $key = config('services.openrouter.key');
 
         if (blank($key)) {
@@ -71,7 +88,7 @@ class AskOpenRouter
             ->post($this->endpoint(), [
                 'model' => config('services.openrouter.model'),
                 'messages' => [
-                    ['role' => 'system', 'content' => self::SYSTEM_PROMPT],
+                    ['role' => 'system', 'content' => $systemPrompt],
                     ...array_slice($messages, -self::HISTORY_LIMIT),
                 ],
             ]);
