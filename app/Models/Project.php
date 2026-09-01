@@ -2,11 +2,13 @@
 
 namespace App\Models;
 
+use App\Actions\Projects\BuildStarterDocument;
 use Database\Factories\ProjectFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 use stdClass;
 
@@ -19,8 +21,11 @@ use stdClass;
  * @property string|null $client
  * @property string|null $address
  * @property string|null $jurisdiction
+ * @property float|null $latitude
+ * @property float|null $longitude
  * @property string $units
  * @property array<string, mixed> $document
+ * @property array<string, mixed>|null $client_model
  * @property bool $has_local_model
  * @property array<string, mixed>|null $summary
  * @property Carbon|null $opened_at
@@ -29,7 +34,7 @@ use stdClass;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'number', 'client', 'address', 'jurisdiction', 'units', 'document'])]
+#[Fillable(['name', 'number', 'client', 'address', 'jurisdiction', 'latitude', 'longitude', 'units', 'document'])]
 class Project extends Model
 {
     /** @use HasFactory<ProjectFactory> */
@@ -59,6 +64,47 @@ class Project extends Model
     public function clientRecord(): BelongsTo
     {
         return $this->belongsTo(Client::class, 'client_id');
+    }
+
+    /**
+     * The house as the client portal shows it, normalized and ready to build
+     * solids from.
+     *
+     * Prefers the published client model, which carries every level. Falls
+     * back to the stored document for projects that predate it or whose model
+     * still lives on the server — which, once the model has moved onto
+     * somebody's machine, is only the thumbnail's one level.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function houseModel(): ?array
+    {
+        $model = $this->client_model ?? $this->document;
+
+        if (($model['elements'] ?? []) === []) {
+            return null;
+        }
+
+        return app(BuildStarterDocument::class)->normalize($model);
+    }
+
+    /**
+     * Whether the portal is showing the whole house or only the one level
+     * the thumbnail kept, so the client can be told which they are walking.
+     */
+    public function houseModelIsWholeBuilding(): bool
+    {
+        return $this->client_model !== null || ! $this->has_local_model;
+    }
+
+    /**
+     * What the client has said about this drawing from the portal.
+     *
+     * @return HasMany<ClientComment, $this>
+     */
+    public function comments(): HasMany
+    {
+        return $this->hasMany(ClientComment::class);
     }
 
     /**
@@ -315,6 +361,9 @@ class Project extends Model
     {
         return [
             'document' => 'array',
+            'client_model' => 'array',
+            'latitude' => 'float',
+            'longitude' => 'float',
             'summary' => 'array',
             'has_local_model' => 'boolean',
             'opened_at' => 'datetime',

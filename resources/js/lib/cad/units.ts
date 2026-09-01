@@ -3,6 +3,8 @@ import type { Units } from '@/lib/cad/types';
 const MM_PER_INCH = 25.4;
 const MM_PER_FOOT = 304.8;
 const SQ_MM_PER_SQ_FOOT = 92903.04;
+const CU_MM_PER_CU_YARD = 764554857.984;
+const CU_MM_PER_CU_METRE = 1_000_000_000;
 
 /** Denominator used when rounding imperial lengths, matching Revit's default. */
 const IMPERIAL_DENOMINATOR = 16;
@@ -36,6 +38,18 @@ export function formatArea(squareMillimetres: number, units: Units): string {
     }
 
     return `${(squareMillimetres / 1_000_000).toFixed(2)} m²`;
+}
+
+/**
+ * Format a volume for a materials list, where concrete is ordered by the
+ * cubic metre here and by the cubic yard where the drawing is in feet.
+ */
+export function formatVolume(cubicMillimetres: number, units: Units): string {
+    if (units === 'imperial') {
+        return `${(cubicMillimetres / CU_MM_PER_CU_YARD).toFixed(2)} CY`;
+    }
+
+    return `${(cubicMillimetres / CU_MM_PER_CU_METRE).toFixed(2)} m³`;
 }
 
 export function formatAngle(degrees: number): string {

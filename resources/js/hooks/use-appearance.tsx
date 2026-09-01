@@ -1,5 +1,7 @@
 import { useSyncExternalStore } from 'react';
 
+import { writeCookie } from '@/lib/cookies';
+
 export type ResolvedAppearance = 'light' | 'dark';
 export type Appearance = ResolvedAppearance | 'system';
 
@@ -69,12 +71,7 @@ const prefersDark = (): boolean => {
 };
 
 const setCookie = (name: string, value: string, days = 365): void => {
-    if (typeof document === 'undefined') {
-        return;
-    }
-
-    const maxAge = days * 24 * 60 * 60;
-    document.cookie = `${name}=${value};path=/;max-age=${maxAge};SameSite=Lax`;
+    writeCookie(name, value, days * 24 * 60 * 60);
 };
 
 const getStoredAppearance = (): Appearance => {

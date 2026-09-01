@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\ClaudeAccount;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -47,4 +49,21 @@ expect()->extend('toBeOne', function () {
 function something()
 {
     // ..
+}
+
+/**
+ * Somebody who has signed in with their own Claude account.
+ *
+ * Nothing drives the Claude Code CLI without one — a turn spends a
+ * subscription, so it spends the subscription of whoever asked. Tests about
+ * what a turn *does* all start here; the tests about the gate itself live in
+ * ClaudeAccountTest.
+ */
+function signedInUser(): User
+{
+    $user = User::factory()->create();
+
+    ClaudeAccount::factory()->for($user)->create();
+
+    return $user;
 }

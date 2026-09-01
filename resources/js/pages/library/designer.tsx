@@ -9,6 +9,7 @@ import {
     Trash2,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import type { ClaudeState } from '@/components/claude-sign-in';
 import { DesignTerminal } from '@/components/library/design-terminal';
 import type { AiConnectionSummary } from '@/components/library/design-terminal';
 import { DesignerViewport } from '@/components/library/designer-viewport';
@@ -43,8 +44,8 @@ type DesignerPageProps = {
     } | null;
     /** The AI accounts this user has connected — never their keys. */
     connections: AiConnectionSummary[];
-    /** True when Claude Code on this machine can answer in the page. */
-    claudeCodeReady: boolean;
+    /** Whether the CLI is on this machine, and whether you have signed in. */
+    claude: ClaudeState;
 };
 
 /**
@@ -54,7 +55,7 @@ type DesignerPageProps = {
 export default function Designer({
     editing,
     connections,
-    claudeCodeReady,
+    claude,
 }: DesignerPageProps) {
     const [parts, setParts] = useState<ItemPart[]>(editing?.parts ?? []);
     const [chosenId, setChosenId] = useState<string | null>(
@@ -285,7 +286,7 @@ export default function Designer({
 
                 <DesignTerminal
                     connections={connections}
-                    claudeCodeReady={claudeCodeReady}
+                    claude={claude}
                     parts={parts}
                     onDraft={adoptDraft}
                 />

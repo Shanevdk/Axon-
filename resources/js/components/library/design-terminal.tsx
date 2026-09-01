@@ -1,6 +1,8 @@
 import { Form, router, useHttp } from '@inertiajs/react';
 import { Plug, Unplug } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { ClaudeSignIn } from '@/components/claude-sign-in';
+import type { ClaudeState } from '@/components/claude-sign-in';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -25,8 +27,12 @@ export type AiConnectionSummary = {
 
 type DesignTerminalProps = {
     connections: AiConnectionSummary[];
-    /** True when Claude Code on this machine can answer in the page. */
-    claudeCodeReady: boolean;
+    /**
+     * Whether the CLI is on the machine serving the app, and whether this
+     * person has signed in with their own Claude account. Both are needed and
+     * they fail differently, so the terminal says which is missing.
+     */
+    claude: ClaudeState;
     /** The parts on the board right now. */
     parts: ItemPart[];
     /** The AI changed the board: parts to load, names when offered. */
@@ -74,6 +80,7 @@ const PROVIDERS = [
 
 const SHELL_HELP = [
     'claude        talk to Claude here — your plan, no API charges',
+    'login         sign in with your Claude account',
     'claude --api  use a Claude API key instead (billed per token)',
     'openai        OpenAI at the board, by API key',
     'openrouter    OpenRouter at the board, by API key',
@@ -129,10 +136,12 @@ function describeParts(parts: ItemPart[]): string {
  */
 export function DesignTerminal({
     connections,
-    claudeCodeReady,
+    claude,
     parts,
     onDraft,
 }: DesignTerminalProps) {
+    const claudeCodeReady = claude.installed && claude.signedIn;
+
     const [stage, setStage] = useState<
         'shell' | 'session' | 'bridge' | 'claude'
     >('shell');
@@ -402,7 +411,7 @@ export function DesignTerminal({
         if (command === 'claude' && !wantsApi) {
             if (claudeCodeReady) {
                 startClaude();
-            } else {
+            } else if (!claude.installed) {
                 print(
                     line(
                         'warn',
@@ -411,15 +420,30 @@ export function DesignTerminal({
                     line(
                         'note',
                         [
-                            'Install it and sign in — then `claude` talks to you right here,',
-                            'on your subscription, with no API charges:',
+                            'Vanhaven runs the CLI on the computer serving it. Install it:',
                             '',
                             '  npm install -g @anthropic-ai/claude-code',
-                            '  claude          (sign in once)',
                             '',
                             'Already installed? It may not be on this server’s PATH — set',
                             'CLAUDE_CODE_BINARY to its full path. Or use `bridge`, or',
                             '`claude --api` with a key.',
+                        ].join('\n'),
+                    ),
+                );
+            } else {
+                // Installed, but nobody is signed in as. A turn spends a
+                // subscription, so it has to be spent on somebody's say-so.
+                print(
+                    line('warn', '⚠ you are not signed in to Claude'),
+                    line(
+                        'note',
+                        [
+                            'Turns come out of your own subscription, so the account has to',
+                            'be yours. In a terminal on this machine run:',
+                            '',
+                            '  claude setup-token',
+                            '',
+                            'then run `login` here and paste what it printed.',
                         ].join('\n'),
                     ),
                 );
@@ -478,6 +502,9 @@ export function DesignTerminal({
             case 'clear':
                 setLines([]);
                 break;
+            // Signing in to Claude and connecting an API key are both
+            // "accounts", so they live behind the same panel.
+            case 'login':
             case 'connect':
                 setConnecting(true);
                 break;
@@ -722,6 +749,7 @@ export function DesignTerminal({
                 <div className="border-t border-chrome-border p-4">
                     <ConnectAccounts
                         connections={connections}
+                        claude={claude}
                         onConnected={() => setConnecting(false)}
                         onDone={() => setConnecting(false)}
                     />
@@ -856,7 +884,7 @@ function BridgeBanner({ bridged }: { bridged: boolean }) {
                     <p className="mt-1 pl-3">
                         then say:{' '}
                         <span className="text-chrome-fg">
-                            “work the Axon design board”
+                            “work the Vanhaven design board”
                         </span>
                     </p>
                 </div>
@@ -876,7 +904,7 @@ function SessionBanner({ connection }: { connection: AiConnectionSummary }) {
                 <p>
                     <span className="font-bold">{connection.label}</span>{' '}
                     <span className="text-chrome-muted">
-                        for Axon · API key
+                        for Vanhaven · API key
                     </span>
                 </p>
                 <p className="text-chrome-muted">
@@ -889,7 +917,7 @@ function SessionBanner({ connection }: { connection: AiConnectionSummary }) {
 }
 
 /**
- * A friendly pixel creature in Axon's ember, in the family of the one that
+ * A friendly pixel creature in Vanhaven's ember, in the family of the one that
  * lives in the real terminal.
  */
 function Mascot() {
@@ -919,16 +947,21 @@ function Mascot() {
 /* -------------------------------------------------------- the connections */
 
 /**
- * Connect or rekey API accounts. Keys go straight to the server, are stored
- * encrypted, and are never sent back to the browser. Nothing here is needed
- * for the Claude Code bridge.
+ * Accounts, of both kinds.
+ *
+ * Signing in to Claude comes first because it is the one `claude` needs: it
+ * is a subscription, spent by whoever signs in, and no key is involved. The
+ * API keys below it are the paid alternative for the in-page sessions. Both
+ * go straight to the server, are stored encrypted, and are never sent back.
  */
 function ConnectAccounts({
     connections,
+    claude,
     onConnected,
     onDone,
 }: {
     connections: AiConnectionSummary[];
+    claude: ClaudeState;
     onConnected: () => void;
     onDone: () => void;
 }) {
@@ -947,10 +980,11 @@ function ConnectAccounts({
 
     return (
         <div className="space-y-3">
+            <ClaudeSignIn claude={claude} />
+
             <p className="font-mono text-[0.68rem] text-chrome-muted">
-                API keys are for the in-page sessions. To use your Claude
-                subscription instead, close this and run{' '}
-                <span className="text-ember">claude</span>.
+                Above is your Claude subscription, which `claude` runs on. The
+                API keys below are the paid alternative, billed per token.
             </p>
 
             {connections.length > 0 && (

@@ -6,6 +6,7 @@ import {
     Baseline,
     Blinds,
     Box,
+    Boxes,
     BoxSelect,
     BrickWall,
     Cable,
@@ -44,6 +45,7 @@ import {
     MousePointer2,
     Move,
     MoveUpRight,
+    Palette,
     PackageCheck,
     PackageOpen,
     PenLine,
@@ -93,6 +95,7 @@ export type CommandId =
     | 'projectInfo'
     | 'openThreeD'
     | 'openSchedule'
+    | 'openMaterials'
     | 'import'
     | 'exportModel'
     | 'exportTypes'
@@ -103,9 +106,11 @@ export type CommandId =
     | 'unpinSelection'
     | 'createSimilar'
     | 'matchType'
+    | 'groundLevels'
     | 'reviewWarnings'
     | 'purgeUnused'
     | 'cleanUpModel'
+    | 'wallsToCode'
     | 'openLibrary'
     | 'downloadDrawing'
     | 'hideElement'
@@ -129,6 +134,7 @@ export type ToggleId =
     | 'showCrop'
     | 'shadows'
     | 'revealHidden'
+    | 'naturalMaterials'
     | 'walkMode';
 
 export type RibbonAction =
@@ -633,6 +639,15 @@ export const RIBBON_TABS: RibbonTab[] = [
                 title: 'Model Site',
                 buttons: [
                     {
+                        id: 'ground-levels',
+                        label: 'Ground Levels',
+                        icon: Compass,
+                        action: { kind: 'command', command: 'groundLevels' },
+                        size: 'large',
+                        shortcut: 'GL',
+                        hint: 'Measure the real ground over this property',
+                    },
+                    {
                         id: 'toposurface',
                         label: 'Toposurface',
                         icon: Mountain,
@@ -914,6 +929,18 @@ export const RIBBON_TABS: RibbonTab[] = [
                         size: 'small',
                     },
                     {
+                        id: 'natural-materials',
+                        label: 'Materials',
+                        icon: Palette,
+                        action: {
+                            kind: 'toggle',
+                            setting: 'naturalMaterials',
+                        },
+                        size: 'small',
+                        shortcut: 'NM',
+                        hint: 'Draw the model in real material colours — timber with its grain, concrete grey, brick red',
+                    },
+                    {
                         id: 'snaps',
                         label: 'Snaps',
                         icon: Magnet,
@@ -955,6 +982,15 @@ export const RIBBON_TABS: RibbonTab[] = [
                         icon: Table2,
                         action: { kind: 'command', command: 'openSchedule' },
                         size: 'small',
+                    },
+                    {
+                        id: 'materials',
+                        label: 'Materials',
+                        icon: Boxes,
+                        action: { kind: 'command', command: 'openMaterials' },
+                        size: 'small',
+                        shortcut: 'BO',
+                        hint: 'Bill of materials — everything drawn, counted as studs, sheets and concrete',
                     },
                 ],
             },
@@ -1044,7 +1080,7 @@ export const RIBBON_TABS: RibbonTab[] = [
                         icon: PackageCheck,
                         action: { kind: 'command', command: 'exportModel' },
                         size: 'large',
-                        hint: 'Write the model out as STEP, STL, OBJ, DXF or an Axon model file',
+                        hint: 'Write the model out as STEP, STL, OBJ, DXF or an Vanhaven model file',
                     },
                     {
                         id: 'download-drawing',
@@ -1103,6 +1139,15 @@ export const RIBBON_TABS: RibbonTab[] = [
                         icon: Info,
                         action: { kind: 'command', command: 'projectInfo' },
                         size: 'large',
+                    },
+                    {
+                        id: 'walls-to-code',
+                        label: 'Walls to Code',
+                        icon: ShieldQuestion,
+                        action: { kind: 'command', command: 'wallsToCode' },
+                        size: 'small',
+                        shortcut: 'WC',
+                        hint: 'Thicken exterior wall types to the energy code where the project address is',
                     },
                     {
                         id: 'project-units',
@@ -1230,6 +1275,9 @@ export const SHORTCUTS: Record<string, RibbonAction> = {
     pn: { kind: 'command', command: 'pinSelection' },
     up: { kind: 'command', command: 'unpinSelection' },
     mt: { kind: 'command', command: 'matchType' },
+    bo: { kind: 'command', command: 'openMaterials' },
+    wc: { kind: 'command', command: 'wallsToCode' },
+    nm: { kind: 'toggle', setting: 'naturalMaterials' },
     cs: { kind: 'command', command: 'createSimilar' },
     wr: { kind: 'command', command: 'reviewWarnings' },
     cx: { kind: 'command', command: 'cleanUpModel' },

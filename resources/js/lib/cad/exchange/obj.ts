@@ -56,7 +56,7 @@ export type ObjResult = {
  */
 export function exportObj(solids: Solid[], name = 'model'): ObjResult {
     const lines: string[] = [
-        `# Axon`,
+        `# Vanhaven`,
         `# ${solids.length} solids, millimetres`,
         `mtllib ${name}.mtl`,
         '',
@@ -100,7 +100,7 @@ export function exportObj(solids: Solid[], name = 'model'): ObjResult {
 }
 
 function buildMtl(categories: Set<SolidCategory>): string {
-    const lines = ['# Axon', ''];
+    const lines = ['# Vanhaven', ''];
 
     categories.forEach((category) => {
         const [red, green, blue] = toLinear(MATERIAL_COLOURS[category]);

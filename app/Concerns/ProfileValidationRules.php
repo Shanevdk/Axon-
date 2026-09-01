@@ -3,6 +3,7 @@
 namespace App\Concerns;
 
 use App\Models\User;
+use App\Rules\WorkEmail;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Validation\Rule;
 
@@ -43,6 +44,9 @@ trait ProfileValidationRules
             'string',
             'email',
             'max:255',
+            // Accounts belong to a practice, so a personal mailbox is refused
+            // at every door that sets an address.
+            new WorkEmail,
             $userId === null
                 ? Rule::unique(User::class)
                 : Rule::unique(User::class)->ignore($userId),

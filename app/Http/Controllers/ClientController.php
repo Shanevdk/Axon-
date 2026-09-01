@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreClientRequest;
 use App\Http\Requests\UpdateClientRequest;
 use App\Models\Client;
+use App\Models\ClientComment;
 use App\Models\Project;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -22,7 +23,10 @@ class ClientController extends Controller
     {
         $clients = $request->user()
             ->teamClients()
-            ->with(['projects' => fn ($query) => $query->latest('worked_at')->latest('id')])
+            ->with([
+                'projects' => fn ($query) => $query->latest('worked_at')->latest('id'),
+                'projects.comments' => fn ($query) => $query->latest('id'),
+            ])
             ->orderBy('name')
             ->get();
 
@@ -41,6 +45,10 @@ class ClientController extends Controller
                 'email' => $client->email,
                 'phone' => $client->phone,
                 'notes' => $client->notes,
+                'portal_username' => $client->portal_username,
+                'portal_number' => $client->formattedPortalNumber(),
+                'portal_url' => route('portal.enter'),
+                'portal_seen_at' => $client->portal_seen_at?->toIso8601String(),
                 'total_seconds' => $client->totalWorkedSeconds(),
                 'last_worked_at' => $client->lastWorkedAt()?->toIso8601String(),
                 'projects' => $client->projects->map(
@@ -90,6 +98,23 @@ class ClientController extends Controller
         $client->delete();
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Client removed.')]);
+
+        return back();
+    }
+
+    /**
+     * Issue the client a new portal number, retiring the old one at once.
+     */
+    public function reissueNumber(Client $client): RedirectResponse
+    {
+        Gate::authorize('update', $client);
+
+        $client->reissuePortalNumber();
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => __('New number issued. The old one no longer works.'),
+        ]);
 
         return back();
     }
@@ -147,6 +172,15 @@ class ClientController extends Controller
             'opened_at' => $project->opened_at?->toIso8601String(),
             'summary' => $project->documentSummary(),
             'preview' => $project->planPreview(),
+            // Unassigned drawings have no client and so no conversation; the
+            // relation is only eager loaded for the ones that do.
+            'comments' => $project->relationLoaded('comments')
+                ? $project->comments->map(fn (ClientComment $comment): array => [
+                    'id' => $comment->id,
+                    'body' => $comment->body,
+                    'created_at' => $comment->created_at?->toIso8601String(),
+                ])
+                : [],
         ];
     }
 }

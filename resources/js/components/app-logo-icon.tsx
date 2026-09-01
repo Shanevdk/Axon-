@@ -1,7 +1,7 @@
 import type { SVGAttributes } from 'react';
 
 /**
- * The Axon mark: a cube drawn in true isometric, the way an axonometric is set
+ * The Vanhaven mark: a cube drawn in true isometric, the way an axonometric is set
  * out on the board. Three faces in three weights of the current colour, so it
  * reads on paper white and on the dark chrome of the editor alike.
  */

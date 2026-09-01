@@ -49,7 +49,7 @@ export function exportBinaryStl(
     const triangles = solids.flatMap(solidTriangles);
     const buffer = new ArrayBuffer(84 + triangles.length * 50);
     const view = new DataView(buffer);
-    const header = `Axon - ${options.name ?? 'model'}`;
+    const header = `Vanhaven - ${options.name ?? 'model'}`;
 
     // 80 byte header, truncated or zero padded.
     for (let index = 0; index < 80; index++) {

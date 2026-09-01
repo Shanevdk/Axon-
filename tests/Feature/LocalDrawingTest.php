@@ -76,6 +76,68 @@ test('sending a summary moves the model off the server', function () {
         ->and($project->summary['walls'])->toBe(40);
 });
 
+test('the client model is stored alongside the preview', function () {
+    $user = User::factory()->create();
+    $project = Project::factory()->for($user)->create();
+
+    $house = [
+        ...previewDocument(),
+        'levels' => [
+            ['id' => 'level-1', 'name' => 'Level 1', 'elevation' => 0],
+            ['id' => 'level-2', 'name' => 'Level 2', 'elevation' => 3000],
+        ],
+    ];
+
+    $this->actingAs($user)
+        ->putJson(route('projects.document.update', $project), [
+            'document' => previewDocument(),
+            'summary' => wholeModelSummary(),
+            'client_model' => $house,
+        ])
+        ->assertOk();
+
+    $project->refresh();
+
+    // The preview keeps its one level for the thumbnail; the portal gets both.
+    expect($project->document['levels'])->toHaveCount(1)
+        ->and($project->client_model['levels'])->toHaveCount(2);
+});
+
+test('a save that carries no client model leaves the stored one alone', function () {
+    $user = User::factory()->create();
+    $project = Project::factory()->for($user)->create([
+        'client_model' => previewDocument(),
+    ]);
+
+    // Not sending one means "nothing new to say", not "the house is gone" —
+    // otherwise an older editor tab would empty the client's portal.
+    $this->actingAs($user)
+        ->putJson(route('projects.document.update', $project), [
+            'document' => previewDocument(),
+            'summary' => wholeModelSummary(),
+        ])
+        ->assertOk();
+
+    expect($project->refresh()->client_model)->not->toBeNull();
+});
+
+test('an emptied drawing clears the client model', function () {
+    $user = User::factory()->create();
+    $project = Project::factory()->for($user)->create([
+        'client_model' => previewDocument(),
+    ]);
+
+    $this->actingAs($user)
+        ->putJson(route('projects.document.update', $project), [
+            'document' => previewDocument(),
+            'summary' => wholeModelSummary(),
+            'client_model' => null,
+        ])
+        ->assertOk();
+
+    expect($project->refresh()->client_model)->toBeNull();
+});
+
 test('a document sent without a summary is still stored whole', function () {
     $user = User::factory()->create();
     $project = Project::factory()->for($user)->create();

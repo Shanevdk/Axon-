@@ -3,7 +3,6 @@
 namespace App\Mcp\Tools;
 
 use App\Mcp\Tools\Concerns\MutatesDocuments;
-use App\Models\Project;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Laravel\Mcp\Request;
@@ -22,7 +21,7 @@ class CreateWallsTool extends Tool
     public function handle(Request $request): Response|ResponseFactory
     {
         $validated = $request->validate([
-            'project_id' => ['required', 'integer', 'exists:projects,id'],
+            'project_id' => ['required', 'integer'],
             'level' => ['required', 'string'],
             'type_id' => ['nullable', 'string'],
             'height' => ['nullable', 'numeric', 'min:100', 'max:20000'],
@@ -36,7 +35,11 @@ class CreateWallsTool extends Tool
             'height.max' => 'Wall height is in millimetres; 20000 (20 m) is the ceiling.',
         ]);
 
-        $project = Project::query()->findOrFail($validated['project_id']);
+        $project = $this->visibleProjects()->find($validated['project_id']);
+
+        if ($project === null) {
+            return $this->refuseUnknownProject();
+        }
 
         if ($away = $this->refuseIfAway($project)) {
             return $away;

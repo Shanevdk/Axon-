@@ -9,7 +9,7 @@ use Illuminate\Http\Request;
 /**
  * Where someone goes once they are through the door.
  *
- * The first arrival lands on the front page, which is the only place Axon
+ * The first arrival lands on the front page, which is the only place Vanhaven
  * explains itself; every arrival after that skips the sales pitch and opens
  * the studio. An intended URL still wins — somebody following an invitation
  * link should end up where the link pointed.

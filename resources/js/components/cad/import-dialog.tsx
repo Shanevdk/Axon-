@@ -13,6 +13,8 @@ import { Label } from '@/components/ui/label';
 import type { CadEditor } from '@/hooks/use-cad-editor';
 import { parseDxf } from '@/lib/cad/exchange/dxf';
 import type { DxfDrawing } from '@/lib/cad/exchange/dxf';
+import { IfcImportError, importIfc } from '@/lib/cad/exchange/ifc';
+import type { IfcImport } from '@/lib/cad/exchange/ifc';
 import {
     insertDocument,
     insertDxf,
@@ -31,6 +33,7 @@ import type { CadDocument } from '@/lib/cad/types';
 import { cn } from '@/lib/utils';
 
 type Payload =
+    | { kind: 'ifc'; filename: string; model: IfcImport }
     | { kind: 'dxf'; filename: string; drawing: DxfDrawing }
     | { kind: 'mesh'; filename: string; mesh: ImportedMesh }
     | { kind: 'types'; filename: string; library: TypeLibrary }
@@ -92,6 +95,23 @@ export function ImportDialog({
                 return;
             }
 
+            // A .rvt cannot be read by anything but Revit — it is a closed
+            // binary format with no published specification. Saying so, and
+            // saying exactly what to do instead, beats a parse error.
+            if (lower.endsWith('.rvt') || lower.endsWith('.rfa')) {
+                throw new Error(
+                    'Revit files are a closed format that only Revit can open. In Revit, use File → Export → IFC, then bring the .ifc here — walls come in as walls, slabs as floors and spaces as rooms.',
+                );
+            }
+
+            if (lower.endsWith('.ifc')) {
+                const read = importIfc(await file.text(), editor.level.id);
+
+                setPayload({ kind: 'ifc', filename: file.name, model: read });
+
+                return;
+            }
+
             if (lower.endsWith('.stl') || lower.endsWith('.obj')) {
                 setPayload({
                     kind: 'mesh',
@@ -130,11 +150,15 @@ export function ImportDialog({
                 );
             }
 
-            throw new Error('Unsupported file. Use DXF, STL, OBJ or JSON.');
+            throw new Error(
+                'Unsupported file. Use IFC, DXF, STL, OBJ or JSON.',
+            );
         } catch (thrown) {
             setPayload(null);
             setError(
-                thrown instanceof MeshImportError || thrown instanceof Error
+                thrown instanceof MeshImportError ||
+                thrown instanceof IfcImportError ||
+                thrown instanceof Error
                     ? thrown.message
                     : 'That file could not be read.',
             );
@@ -150,6 +174,22 @@ export function ImportDialog({
 
         editor.store.commit('Import', (current) => {
             switch (payload.kind) {
+                case 'ifc':
+                    return {
+                        ...current,
+                        elements: [
+                            ...current.elements,
+                            // IFC carries a wall's thickness in its geometry,
+                            // not as a type anybody here has. The walls come
+                            // in on the type currently armed, which is the
+                            // one thing the studio can change afterwards.
+                            ...payload.model.elements.map((element) =>
+                                element.kind === 'wall' && element.typeId === ''
+                                    ? { ...element, typeId: editor.wallTypeId }
+                                    : element,
+                            ),
+                        ],
+                    };
                 case 'dxf':
                     return insertDxf(current, payload.drawing.polylines, {
                         levelId: level,
@@ -197,8 +237,8 @@ export function ImportDialog({
                 <DialogHeader>
                     <DialogTitle>Import</DialogTitle>
                     <DialogDescription>
-                        CAD drawings, 3D meshes, type libraries or another Axon
-                        model.
+                        CAD drawings, 3D meshes, type libraries or another
+                        Vanhaven model.
                     </DialogDescription>
                 </DialogHeader>
 
@@ -227,7 +267,7 @@ export function ImportDialog({
                 >
                     <input
                         type="file"
-                        accept=".dxf,.stl,.obj,.json"
+                        accept=".ifc,.dxf,.stl,.obj,.json,.rvt,.rfa"
                         className="sr-only"
                         onChange={(event) => {
                             const file = event.target.files?.[0];
@@ -246,7 +286,7 @@ export function ImportDialog({
                             : 'Drop a file, or click to choose'}
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                        DXF · STL · OBJ · Axon model or type library
+                        DXF · STL · OBJ · Vanhaven model or type library
                     </p>
                 </label>
 

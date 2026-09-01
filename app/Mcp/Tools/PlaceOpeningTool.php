@@ -3,7 +3,6 @@
 namespace App\Mcp\Tools;
 
 use App\Mcp\Tools\Concerns\MutatesDocuments;
-use App\Models\Project;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Laravel\Mcp\Request;
@@ -22,7 +21,7 @@ class PlaceOpeningTool extends Tool
     public function handle(Request $request): Response|ResponseFactory
     {
         $validated = $request->validate([
-            'project_id' => ['required', 'integer', 'exists:projects,id'],
+            'project_id' => ['required', 'integer'],
             'kind' => ['required', 'in:door,window'],
             'host' => ['required', 'string'],
             'at' => ['required', 'numeric', 'min:0'],
@@ -32,7 +31,11 @@ class PlaceOpeningTool extends Tool
             'at.min' => 'at is the distance in millimetres from the wall\'s start point and cannot be negative.',
         ]);
 
-        $project = Project::query()->findOrFail($validated['project_id']);
+        $project = $this->visibleProjects()->find($validated['project_id']);
+
+        if ($project === null) {
+            return $this->refuseUnknownProject();
+        }
 
         if ($away = $this->refuseIfAway($project)) {
             return $away;

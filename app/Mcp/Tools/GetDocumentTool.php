@@ -3,7 +3,6 @@
 namespace App\Mcp\Tools;
 
 use App\Mcp\Tools\Concerns\MutatesDocuments;
-use App\Models\Project;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Laravel\Mcp\Request;
@@ -26,21 +25,30 @@ class GetDocumentTool extends Tool
     public function handle(Request $request): Response|ResponseFactory
     {
         $validated = $request->validate([
-            'project_id' => ['required', 'integer', 'exists:projects,id'],
-        ], [
-            'project_id.exists' => 'No project has that id. Call list-projects to see the available ids.',
+            'project_id' => ['required', 'integer'],
         ]);
 
-        $project = Project::query()->findOrFail($validated['project_id']);
+        $project = $this->visibleProjects()->find($validated['project_id']);
+
+        if ($project === null) {
+            return $this->refuseUnknownProject();
+        }
+
+        // Lent by the editor's sidebar for this turn, so it is the live
+        // drawing — newer than anything the server has stored.
+        $lent = $this->bench()->isOpen($project->id);
+        $preview = $project->has_local_model && ! $lent;
 
         return Response::structured([
             'project' => ['id' => $project->id, 'name' => $project->name],
             // Honest about which it is: once a drawing lives on a machine the
             // server holds one level of it and nothing more.
-            'is_preview' => $project->has_local_model,
-            'note' => $project->has_local_model
-                ? 'This is a preview of one level. The full model is on the computer that drew it.'
-                : 'This is the whole model.',
+            'is_preview' => $preview,
+            'note' => match (true) {
+                $lent => 'This is the live drawing, lent by the editor for this turn. Edits made here go back to it.',
+                $preview => 'This is a preview of one level. The full model is on the computer that drew it.',
+                default => 'This is the whole model.',
+            },
             'document' => $this->documentFor($project),
         ]);
     }

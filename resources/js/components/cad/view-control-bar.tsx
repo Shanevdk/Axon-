@@ -5,9 +5,11 @@ import {
     EyeOff,
     Frame,
     Grid2x2,
+    Group,
     Layers,
     Maximize,
     Minus,
+    Palette,
     Plus,
     Sun,
     SunDim,
@@ -112,6 +114,18 @@ export function ViewControlBar({ editor }: { editor: CadEditor }) {
             >
                 <SunDim className="size-3.5" />
             </IconToggle>
+
+            {isModel && (
+                <IconToggle
+                    active={settings.naturalMaterials}
+                    onClick={() => editor.applyToggle('naturalMaterials')}
+                    title="Natural materials — timber, concrete and brick in their own colours (NM)"
+                >
+                    <Palette className="size-3.5" />
+                </IconToggle>
+            )}
+
+            {isModel && <ExplodeSlider editor={editor} />}
 
             <div className="h-4 w-px shrink-0 bg-chrome-border" />
 
@@ -278,5 +292,55 @@ function IconButton({
         >
             {children}
         </button>
+    );
+}
+
+/**
+ * How far the model is pulled apart.
+ *
+ * With one element selected the slider takes that element apart into its
+ * layers; with nothing selected it opens the whole building out. The label
+ * says which, because the same control does both.
+ */
+function ExplodeSlider({ editor }: { editor: CadEditor }) {
+    const apart = editor.explodeFactor > 0;
+    const what = editor.explodeFocus ? 'this part' : 'the model';
+
+    return (
+        <>
+            <div className="h-4 w-px shrink-0 bg-chrome-border" />
+
+            <div
+                className="flex shrink-0 items-center gap-1.5"
+                title={`Explode ${what}`}
+            >
+                <button
+                    type="button"
+                    onClick={() => editor.setExplodeFactor(apart ? 0 : 0.55)}
+                    className={cn(
+                        'flex items-center gap-1 rounded-sm px-1.5 py-0.5 transition-colors',
+                        apart
+                            ? 'bg-sand/20 text-sand'
+                            : 'text-chrome-muted hover:text-chrome-fg',
+                    )}
+                >
+                    <Group className="size-3.5" />
+                    Explode
+                </button>
+
+                <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={editor.explodeFactor}
+                    aria-label={`Explode ${what}`}
+                    onChange={(event) =>
+                        editor.setExplodeFactor(Number(event.target.value))
+                    }
+                    className="h-1 w-20 accent-sand"
+                />
+            </div>
+        </>
     );
 }

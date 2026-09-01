@@ -9,6 +9,7 @@ import {
     Compass,
     DoorOpen,
     LayoutPanelTop,
+    Mountain,
     Table2,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -22,6 +23,7 @@ const VIEW_ICONS: Record<ViewKind, typeof Box> = {
     section: Scissors,
     threeD: Box,
     schedule: Table2,
+    site: Mountain,
 };
 
 type ProjectBrowserProps = {

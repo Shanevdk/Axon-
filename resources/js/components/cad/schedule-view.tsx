@@ -1,3 +1,4 @@
+import { Download } from 'lucide-react';
 import { useMemo } from 'react';
 import type { CadEditor } from '@/hooks/use-cad-editor';
 import { distance } from '@/lib/cad/geometry';
@@ -9,6 +10,15 @@ import {
     windowTypeOf,
 } from '@/lib/cad/model';
 import { computeRoomBoundaries } from '@/lib/cad/rooms';
+import {
+    formatQuantity,
+    orderQuantity,
+    SECTION_LABELS,
+    SECTION_ORDER,
+    takeOff,
+    takeoffCsv,
+} from '@/lib/cad/takeoff';
+import type { TakeoffSection } from '@/lib/cad/takeoff';
 import type {
     OpeningElement,
     RoomElement,
@@ -32,6 +42,22 @@ export function ScheduleView({
     editor: CadEditor;
     kind: ScheduleKind;
 }) {
+    // The bill of materials is grouped by trade rather than listed by
+    // element, so it gets a sheet of its own rather than a column set.
+    if (kind === 'materials') {
+        return <MaterialsSchedule editor={editor} />;
+    }
+
+    return <TableSchedule editor={editor} kind={kind} />;
+}
+
+function TableSchedule({
+    editor,
+    kind,
+}: {
+    editor: CadEditor;
+    kind: Exclude<ScheduleKind, 'materials'>;
+}) {
     const { document } = editor;
 
     const { columns, rows, title } = useMemo(() => {
@@ -52,7 +78,7 @@ export function ScheduleView({
             <div className="mx-auto max-w-4xl">
                 <header className="mb-5 border-b-2 border-ink pb-3">
                     <p className="ax-eyebrow text-[0.62rem] text-ink-muted">
-                        Axon
+                        Vanhaven
                     </p>
                     <h1 className="mt-1 text-xl font-semibold tracking-tight">
                         {title}
@@ -283,4 +309,190 @@ function wallSchedule(editor: CadEditor): {
     });
 
     return { columns, rows, title: 'Wall Schedule' };
+}
+
+/* ------------------------------------------------------- bill of materials */
+
+/**
+ * What the model is built from, grouped by trade.
+ *
+ * The measured column is what the drawing says; the order column is what to
+ * actually buy, waste included. Both are shown because an estimator wants to
+ * see the allowance rather than have it folded in silently.
+ */
+/** Trades counted by rule of thumb rather than measured off the drawing. */
+const ALLOWANCE_SECTIONS: TakeoffSection[] = [
+    'electrical',
+    'plumbing',
+    'hvac',
+];
+
+function MaterialsSchedule({ editor }: { editor: CadEditor }) {
+    const { document } = editor;
+    const takeoff = useMemo(() => takeOff(document), [document]);
+    const units = document.units;
+
+    const sections = SECTION_ORDER.map((section) => ({
+        section,
+        lines: takeoff.lines.filter((line) => line.section === section),
+    })).filter((group) => group.lines.length > 0);
+
+    const download = () => {
+        const blob = new Blob([takeoffCsv(takeoff, units)], {
+            type: 'text/csv;charset=utf-8',
+        });
+        const url = URL.createObjectURL(blob);
+        const link = window.document.createElement('a');
+
+        link.href = url;
+        link.download = 'bill-of-materials.csv';
+        link.click();
+
+        URL.revokeObjectURL(url);
+    };
+
+    return (
+        <div className="h-full overflow-auto bg-paper-warm p-8 text-ink">
+            <div className="mx-auto max-w-4xl">
+                <header className="mb-5 flex items-end justify-between gap-4 border-b-2 border-ink pb-3">
+                    <div>
+                        <p className="ax-eyebrow text-[0.62rem] text-ink-muted">
+                            Vanhaven
+                        </p>
+                        <h1 className="mt-1 text-xl font-semibold tracking-tight">
+                            Bill of Materials
+                        </h1>
+                        <p className="mt-0.5 text-xs text-ink-muted">
+                            {takeoff.lines.length}{' '}
+                            {takeoff.lines.length === 1 ? 'line' : 'lines'} from{' '}
+                            {takeoff.counted}{' '}
+                            {takeoff.counted === 1 ? 'element' : 'elements'} ·{' '}
+                            {units === 'imperial' ? 'Imperial' : 'Metric'}
+                        </p>
+                    </div>
+
+                    {takeoff.lines.length > 0 && (
+                        <button
+                            type="button"
+                            onClick={download}
+                            className="flex shrink-0 items-center gap-1.5 rounded-sm border border-ink/30 px-2.5 py-1.5 text-xs transition-colors hover:bg-ink hover:text-paper"
+                        >
+                            <Download className="size-3.5" />
+                            Download CSV
+                        </button>
+                    )}
+                </header>
+
+                {takeoff.lines.length === 0 ? (
+                    <p className="py-12 text-center text-sm text-ink-muted">
+                        Nothing to build yet. Draw some walls, floors or
+                        footings and the materials to buy will be listed here.
+                    </p>
+                ) : (
+                    <>
+                        <table className="w-full border-collapse text-sm">
+                            <thead>
+                                <tr className="border-b border-ink/40">
+                                    <th className="px-2 py-2 text-left text-[0.68rem] font-semibold tracking-wider uppercase">
+                                        Material
+                                    </th>
+                                    <th className="px-2 py-2 text-right text-[0.68rem] font-semibold tracking-wider uppercase">
+                                        Measured
+                                    </th>
+                                    <th className="px-2 py-2 text-right text-[0.68rem] font-semibold tracking-wider uppercase">
+                                        Waste
+                                    </th>
+                                    <th className="px-2 py-2 text-right text-[0.68rem] font-semibold tracking-wider uppercase">
+                                        Order
+                                    </th>
+                                    <th className="px-2 py-2 text-right text-[0.68rem] font-semibold tracking-wider uppercase">
+                                        From
+                                    </th>
+                                </tr>
+                            </thead>
+
+                            {sections.map((group) => (
+                                <tbody key={group.section}>
+                                    <tr>
+                                        <td
+                                            colSpan={5}
+                                            className="border-b border-ink/20 bg-sand/25 px-2 pt-4 pb-1 text-[0.66rem] font-semibold tracking-wider uppercase"
+                                        >
+                                            {SECTION_LABELS[group.section]}
+                                        </td>
+                                    </tr>
+                                    {group.lines.map((line) => (
+                                        <tr
+                                            key={line.key}
+                                            className="border-b border-ink/10"
+                                        >
+                                            <td className="px-2 py-1.5">
+                                                {line.material}
+                                            </td>
+                                            <td className="px-2 py-1.5 text-right tabular-nums">
+                                                {formatQuantity(
+                                                    line.quantity,
+                                                    line.unit,
+                                                    units,
+                                                )}
+                                            </td>
+                                            <td className="px-2 py-1.5 text-right text-ink-muted tabular-nums">
+                                                {line.waste > 0
+                                                    ? `${Math.round(line.waste * 100)}%`
+                                                    : '—'}
+                                            </td>
+                                            <td className="px-2 py-1.5 text-right font-medium tabular-nums">
+                                                {formatQuantity(
+                                                    orderQuantity(line),
+                                                    line.unit,
+                                                    units,
+                                                )}
+                                            </td>
+                                            <td className="px-2 py-1.5 text-right text-ink-muted tabular-nums">
+                                                {line.from}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            ))}
+                        </table>
+
+                        <p className="mt-5 border-t border-ink/20 pt-3 text-[0.7rem] leading-relaxed text-ink-muted">
+                            Quantities are measured off the model as drawn, at
+                            400mm framing centres, and only for work in the new
+                            phase. Waste is a cutting allowance on sheet goods
+                            and sawn lengths, never on anything counted by the
+                            piece. Check it against a real estimate before
+                            anybody orders anything.{' '}
+                            {ALLOWANCE_SECTIONS.some((section) =>
+                                sections.some(
+                                    (group) => group.section === section,
+                                ),
+                            ) && (
+                                <>
+                                    Electrical, plumbing and HVAC are
+                                    allowances worked out from the floor area
+                                    and the rooms, because nothing in the
+                                    drawing says where a socket or a run of
+                                    pipe goes. Draw the services and they are
+                                    measured properly instead.
+                                </>
+                            )}
+                            {takeoff.unknown > 0 && (
+                                <>
+                                    {' '}
+                                    {takeoff.unknown} imported{' '}
+                                    {takeoff.unknown === 1
+                                        ? 'model is'
+                                        : 'models are'}{' '}
+                                    listed by name only — nothing here knows
+                                    what they are made of.
+                                </>
+                            )}
+                        </p>
+                    </>
+                )}
+            </div>
+        </div>
+    );
 }

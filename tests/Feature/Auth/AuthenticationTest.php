@@ -121,17 +121,19 @@ test('the front page serves both a visitor and someone signed in', function () {
 });
 
 test('the chosen palette is painted into the shell before react boots', function () {
+    // withUnencryptedCookie, not withCookie: JavaScript writes this one, so it
+    // arrives unencrypted and must stay excepted in bootstrap/app.php.
     // No cookie yet, so a first visitor gets the professional default.
     $this->get(route('home'))
         ->assertOk()
         ->assertSee('data-palette="graphite"', false);
 
-    $this->withCookie('palette', 'mono')
+    $this->withUnencryptedCookie('palette', 'mono')
         ->get(route('home'))
         ->assertSee('data-palette="mono"', false);
 
     // A crafted cookie cannot inject an attribute value.
-    $this->withCookie('palette', '"><script>')
+    $this->withUnencryptedCookie('palette', '"><script>')
         ->get(route('home'))
         ->assertSee('data-palette="graphite"', false);
 });

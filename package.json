@@ -1,6 +1,6 @@
 {
     "$schema": "https://www.schemastore.org/package.json",
-    "name": "axon",
+    "name": "vanhaven-design-software",
     "private": true,
     "type": "module",
     "engines": {

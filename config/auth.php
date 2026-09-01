@@ -42,6 +42,18 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        /*
+         * The connector. Somebody who has added Vanhaven to Claude arrives
+         * here carrying an OAuth token rather than a session cookie, and the
+         * MCP server at /mcp/cad is the only thing behind this guard. The
+         * driver must be `passport` — `token` or `sanctum` here fails
+         * silently and every connector request comes through unauthenticated.
+         */
+        'api' => [
+            'driver' => 'passport',
+            'provider' => 'users',
+        ],
     ],
 
     /*

@@ -3,7 +3,6 @@
 namespace App\Mcp\Tools;
 
 use App\Mcp\Tools\Concerns\MutatesDocuments;
-use App\Models\Project;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Illuminate\Support\Str;
@@ -26,12 +25,16 @@ class AddLevelTool extends Tool
     public function handle(Request $request): Response|ResponseFactory
     {
         $validated = $request->validate([
-            'project_id' => ['required', 'integer', 'exists:projects,id'],
+            'project_id' => ['required', 'integer'],
             'name' => ['required', 'string', 'max:120'],
             'elevation' => ['nullable', 'numeric'],
         ]);
 
-        $project = Project::query()->findOrFail($validated['project_id']);
+        $project = $this->visibleProjects()->find($validated['project_id']);
+
+        if ($project === null) {
+            return $this->refuseUnknownProject();
+        }
 
         if ($away = $this->refuseIfAway($project)) {
             return $away;

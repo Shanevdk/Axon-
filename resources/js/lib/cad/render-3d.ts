@@ -1,6 +1,12 @@
 import { pointInPolygon } from '@/lib/cad/geometry';
+import { grainLines } from '@/lib/cad/grain';
 import type { Face, Vertex } from '@/lib/cad/mesh';
-import { AMBIENT_LIGHT, CAD_THEME, LIGHT_DIRECTION } from '@/lib/cad/theme';
+import {
+    AMBIENT_LIGHT,
+    CAD_THEME,
+    LIGHT_DIRECTION,
+    NATURAL_MATERIALS,
+} from '@/lib/cad/theme';
 import type {
     OrbitCamera,
     Point,
@@ -20,6 +26,11 @@ export type Scene3D = {
     visualStyle: VisualStyle;
     selection: Set<string>;
     hovered: string | null;
+    /**
+     * Draw everything in the colour its material really is, with the grain
+     * and coursing that go with it, rather than in the drawing palette.
+     */
+    naturalMaterials?: boolean;
 };
 
 export type PickTarget = {
@@ -184,6 +195,28 @@ export function draw3d(
 
     const prepared: Prepared[] = [];
 
+    /** A point in camera space, on the screen. */
+    const flatten = (vertex: Vertex): Point =>
+        scene.projection === 'perspective'
+            ? {
+                  x: width / 2 + (vertex.x / vertex.z) * focal,
+                  y: height / 2 - (vertex.y / vertex.z) * focal,
+              }
+            : {
+                  x: width / 2 + vertex.x * orthoScale,
+                  y: height / 2 - vertex.y * orthoScale,
+              };
+
+    /**
+     * A point in the model, on the screen. Null behind the near plane, where
+     * there is no screen position to give.
+     */
+    const toScreen = (vertex: Vertex): Point | null => {
+        const camera = toCameraSpace(vertex, basis);
+
+        return camera.z < NEAR_PLANE ? null : flatten(camera);
+    };
+
     scene.faces.forEach((face) => {
         const cameraSpace = face.vertices.map((vertex) =>
             toCameraSpace(vertex, basis),
@@ -194,17 +227,7 @@ export function draw3d(
             return;
         }
 
-        const polygon = clipped.map((vertex) =>
-            scene.projection === 'perspective'
-                ? {
-                      x: width / 2 + (vertex.x / vertex.z) * focal,
-                      y: height / 2 - (vertex.y / vertex.z) * focal,
-                  }
-                : {
-                      x: width / 2 + vertex.x * orthoScale,
-                      y: height / 2 - vertex.y * orthoScale,
-                  },
-        );
+        const polygon = clipped.map(flatten);
 
         const depth =
             clipped.reduce((total, vertex) => total + vertex.z, 0) /
@@ -245,6 +268,13 @@ export function draw3d(
         ctx.closePath();
 
         if (!wireframe) {
+            // In natural mode a surface wears its own colour; otherwise it
+            // wears the one the drawing palette gave it.
+            const own =
+                scene.naturalMaterials && !hiddenLine
+                    ? (NATURAL_MATERIALS[face.material] ?? face.color)
+                    : face.color;
+
             ctx.globalAlpha = face.opacity ?? 1;
             ctx.fillStyle = selected
                 ? shade(CAD_THEME.selection, intensity)
@@ -252,8 +282,18 @@ export function draw3d(
                   ? shade(CAD_THEME.ember, intensity)
                   : hiddenLine
                     ? CAD_THEME.paper
-                    : shade(face.color, intensity);
+                    : shade(own, intensity);
             ctx.fill();
+
+            if (
+                scene.naturalMaterials &&
+                !hiddenLine &&
+                !selected &&
+                !hovered
+            ) {
+                drawGrain(ctx, face, polygon, toScreen, intensity);
+            }
+
             ctx.globalAlpha = 1;
         }
 
@@ -286,6 +326,42 @@ export function pickAt(targets: PickTarget[], screen: Point): string | null {
     );
 
     return hit?.elementId ?? null;
+}
+
+/** Which way a click in the model view changes the selection. */
+export type PickModifiers = {
+    /** Ctrl or Cmd: add to what is already selected. */
+    adding: boolean;
+    /** Shift: take away from it. */
+    removing: boolean;
+};
+
+/**
+ * The selection a click in the 3D view leaves behind.
+ *
+ * The same convention the plan view uses, so the two views feel like one
+ * program: a plain click replaces the selection, Ctrl adds, Shift removes,
+ * and clicking past the building clears it — unless a modifier was held,
+ * where a miss should leave the selection alone rather than throw it away.
+ */
+export function resolvePick(
+    selection: string[],
+    hit: string | null,
+    modifiers: PickModifiers,
+): string[] {
+    if (hit === null) {
+        return modifiers.adding || modifiers.removing ? selection : [];
+    }
+
+    if (modifiers.removing) {
+        return selection.filter((id) => id !== hit);
+    }
+
+    if (modifiers.adding) {
+        return [...new Set([...selection, hit])];
+    }
+
+    return [hit];
 }
 
 function paintBackground(
@@ -465,4 +541,128 @@ export function fitCamera(faces: Face[], camera: OrbitCamera): OrbitCamera {
         },
         distance: span * 2.1,
     };
+}
+
+/**
+ * The smallest a face can be on screen and still be worth marking. Below
+ * this the grain would be finer than the pixels and would only muddy it.
+ */
+const GRAIN_WORTH_DRAWING = 900;
+
+/**
+ * Pixels the marks must be apart to read as marks.
+ *
+ * The spacing is a real distance on the building now, so standing back
+ * closes it up. Below this they would merge into a tone, and a wall wearing
+ * a grey smear reads worse than a plain one.
+ */
+const GRAIN_LEGIBLE = 3.5;
+
+/**
+ * Mark a surface the way the material is marked: timber along its grain,
+ * brick and block along their courses.
+ *
+ * The lines are clipped to the face and drawn in a darker shade of what is
+ * already there, so they read as figure in the material rather than as
+ * drafting on top of it.
+ */
+/**
+ * Draw a surface's grain or coursing.
+ *
+ * The lines themselves come from `grainLines`, which works them out on the
+ * face in millimetres — so they belong to the building and stay put as the
+ * model turns. All that happens here is projecting them and deciding whether
+ * they are worth drawing at this size.
+ */
+function drawGrain(
+    ctx: CanvasRenderingContext2D,
+    face: Face,
+    polygon: Point[],
+    toScreen: (vertex: Vertex) => Point | null,
+    intensity: number,
+): void {
+    const xs = polygon.map((p) => p.x);
+    const ys = polygon.map((p) => p.y);
+    const width = Math.max(...xs) - Math.min(...xs);
+    const height = Math.max(...ys) - Math.min(...ys);
+
+    if (width * height < GRAIN_WORTH_DRAWING) {
+        return;
+    }
+
+    const lines = grainLines(face.vertices, face.material);
+
+    if (lines.length === 0) {
+        return;
+    }
+
+    // Projected. A line with an end behind the camera is dropped rather than
+    // clipped: it can only happen on a face the near plane already cuts, and
+    // the clip below hides the difference.
+    const drawn = lines
+        .map(([from, to]) => [toScreen(from), toScreen(to)])
+        .filter((line): line is [Point, Point] =>
+            line[0] !== null && line[1] !== null,
+        );
+
+    if (drawn.length === 0) {
+        return;
+    }
+
+    // Far enough away that the marks would close up into a smudge, so the
+    // surface is left plain rather than dirtied.
+    if (widestGap(drawn) < GRAIN_LEGIBLE) {
+        return;
+    }
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(polygon[0].x, polygon[0].y);
+    polygon.slice(1).forEach((p) => ctx.lineTo(p.x, p.y));
+    ctx.closePath();
+    ctx.clip();
+
+    ctx.strokeStyle = shade(
+        NATURAL_MATERIALS[face.material] ?? '#000000',
+        intensity * 0.72,
+    );
+    ctx.lineWidth = 0.7;
+    ctx.beginPath();
+
+    drawn.forEach(([from, to]) => {
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+    });
+
+    ctx.stroke();
+    ctx.restore();
+}
+
+/**
+ * How far apart the marks land on screen where they are furthest apart —
+ * that is, on the nearest part of the surface.
+ *
+ * The widest gap and not the narrowest: a wall running away from the camera
+ * has its marks converge at the far end, and that convergence is the
+ * perspective doing its job. Judging the face by its far end would strip the
+ * grain off the near end too, which is where it reads best.
+ */
+function widestGap(lines: [Point, Point][]): number {
+    if (lines.length < 2) {
+        return Infinity;
+    }
+
+    let widest = 0;
+
+    for (let index = 1; index < lines.length; index++) {
+        const previous = lines[index - 1][0];
+        const current = lines[index][0];
+
+        widest = Math.max(
+            widest,
+            Math.hypot(current.x - previous.x, current.y - previous.y),
+        );
+    }
+
+    return widest;
 }

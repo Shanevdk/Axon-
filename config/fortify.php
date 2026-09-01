@@ -161,7 +161,9 @@ return [
     */
 
     'features' => [
-        Features::registration(),
+        // Nobody signs themselves up. The head of a studio invites an
+        // address, and the link they are sent opens the account — see
+        // OrganizationInvitationController::setUp().
         Features::resetPasswords(),
         Features::emailVerification(),
         Features::twoFactorAuthentication([

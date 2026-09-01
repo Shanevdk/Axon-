@@ -15,12 +15,31 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
+        /*
+         * The example account, for showing Vanhaven to somebody without handing
+         * over a real one. Its password is deliberately simple and is set
+         * here rather than registered, because the registration rules would
+         * — rightly — refuse it.
+         *
+         * Do not seed this into anything the public can reach.
+         */
+        User::query()->updateOrCreate(
+            ['email' => 'example@example.com'],
+            [
+                'name' => 'Example',
+                'password' => '1234567890',
+                'email_verified_at' => now(),
+            ],
+        );
 
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+        User::query()->updateOrCreate(
+            ['email' => 'test@example.com'],
+            [
+                'name' => 'Test User',
+                'password' => '1234567890',
+                'email_verified_at' => now(),
+            ],
+        );
 
         $this->call(ProjectSeeder::class);
     }

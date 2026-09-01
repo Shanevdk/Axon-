@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Assistant\RunClaudeCode;
 use App\Actions\Projects\BuildStarterDocument;
 use App\Http\Requests\StoreProjectRequest;
 use App\Http\Requests\UpdateProjectRequest;
@@ -63,7 +64,7 @@ class ProjectController extends Controller
     /**
      * Open a project in the modelling environment.
      */
-    public function show(Project $project, BuildStarterDocument $starter): Response
+    public function show(Request $request, Project $project, BuildStarterDocument $starter): Response
     {
         Gate::authorize('view', $project);
 
@@ -78,6 +79,10 @@ class ProjectController extends Controller
                 'client' => $project->client,
                 'address' => $project->address,
                 'jurisdiction' => $project->jurisdiction,
+                // Where the site picker put the pin, so the ground levels
+                // dialog opens on the building rather than on the equator.
+                'latitude' => $project->latitude,
+                'longitude' => $project->longitude,
                 'units' => $project->units,
                 'updated_at' => $project->updated_at?->toIso8601String(),
             ],
@@ -91,6 +96,15 @@ class ProjectController extends Controller
             // The editor's code consultant is hidden rather than broken when
             // there is no key to reach the model with.
             'assistantReady' => filled(config('services.openrouter.key')),
+            // Whether the sidebar can take a turn, split into the two things
+            // that have to be true: the CLI is on this machine, and this
+            // person has signed in with their own Claude account. The dock
+            // asks for whichever is missing rather than failing on the first
+            // question.
+            'claude' => [
+                'installed' => app(RunClaudeCode::class)->isAvailable(),
+                'signedIn' => $request->user()?->claudeAccount !== null,
+            ],
         ]);
     }
 
@@ -129,6 +143,15 @@ class ProjectController extends Controller
             // A summary means the document above is only a preview and the
             // model itself is staying on the machine that drew it. Without
             // one, this is a whole document and is stored as it always was.
+            // The house as the client portal shows it: every level, but only
+            // what is built. Optional, because a drawing with nothing built
+            // in it has no house to send.
+            'client_model' => ['sometimes', 'nullable', 'array'],
+            'client_model.version' => ['required_with:client_model', 'integer'],
+            'client_model.units' => ['required_with:client_model', 'in:metric,imperial'],
+            'client_model.levels' => ['required_with:client_model', 'array'],
+            'client_model.wallTypes' => ['required_with:client_model', 'array'],
+            'client_model.elements' => ['required_with:client_model', 'array'],
             'summary' => ['sometimes', 'array'],
             'summary.levels' => ['required_with:summary', 'integer', 'min:0'],
             'summary.walls' => ['required_with:summary', 'integer', 'min:0'],
@@ -144,6 +167,12 @@ class ProjectController extends Controller
             'document' => $validated['document'],
             'summary' => $isPreview ? $validated['summary'] : null,
             'has_local_model' => $isPreview,
+            // Absent means the editor did not send one this time, which is not
+            // the same as the house having been emptied — only an explicit
+            // null clears it.
+            ...array_key_exists('client_model', $validated)
+                ? ['client_model' => $validated['client_model']]
+                : [],
         ])->save();
 
         // Every save is evidence of active work, so the clock ticks here.

@@ -46,6 +46,13 @@ class HandleInertiaRequests extends Middleware
                     'is_head' => $request->user()->isOrganizationHead(),
                 ],
             ],
+            // The site picker draws its own map from raster tiles. Which
+            // server they come from is a deployment choice, and the licence
+            // that comes with them has to be shown next to them.
+            'map' => [
+                'tiles' => config('services.places.tiles'),
+                'attribution' => config('services.places.attribution'),
+            ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];
     }

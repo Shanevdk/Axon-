@@ -57,7 +57,7 @@ describe('parseDrawing', () => {
 
     it('refuses JSON that is not a drawing', () => {
         expect(() => parseDrawing('{"hello":"world"}')).toThrow(
-            /not an Axon drawing/,
+            /not an Vanhaven drawing/,
         );
     });
 

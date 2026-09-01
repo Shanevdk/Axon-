@@ -2,7 +2,7 @@
 
 namespace App\Mcp\Tools;
 
-use App\Models\LibraryItem;
+use App\Mcp\Tools\Concerns\ScopesToTheAsker;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\ResponseFactory;
@@ -18,13 +18,19 @@ use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 #[IsIdempotent]
 class GetLibraryItemTool extends Tool
 {
+    use ScopesToTheAsker;
+
     public function handle(Request $request): Response|ResponseFactory
     {
         $validated = $request->validate([
-            'item_id' => ['required', 'integer', 'exists:library_items,id'],
+            'item_id' => ['required', 'integer'],
         ]);
 
-        $item = LibraryItem::query()->findOrFail($validated['item_id']);
+        $item = $this->visibleLibraryItems()->find($validated['item_id']);
+
+        if ($item === null) {
+            return $this->refuseUnknownItem();
+        }
 
         return Response::structured([
             'id' => $item->id,

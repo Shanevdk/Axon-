@@ -17,6 +17,7 @@ export const DEFAULT_VIEW_SETTINGS: ViewSettings = {
     cropView: false,
     showCrop: false,
     shadows: false,
+    naturalMaterials: false,
     crop: null,
     phaseFilter: 'all',
     hiddenCategories: [],
@@ -91,6 +92,12 @@ export function deriveViews(document: CadDocument): CadView[] {
             kind: 'schedule',
             schedule: 'wall',
         },
+        {
+            id: 'schedule:materials',
+            name: 'Bill of Materials',
+            kind: 'schedule',
+            schedule: 'materials',
+        },
     ];
 
     return [
@@ -102,6 +109,14 @@ export function deriveViews(document: CadDocument): CadView[] {
             id: 'threeD:default',
             name: '{3D}',
             kind: 'threeD',
+            level: document.levels[0]?.id,
+        },
+        // One property, so one site plan. It is always offered, because the
+        // view is where the ground is measured in the first place.
+        {
+            id: 'site:default',
+            name: 'Site',
+            kind: 'site',
             level: document.levels[0]?.id,
         },
         ...schedules,
@@ -116,13 +131,37 @@ export function findView(views: CadView[], id: string): CadView {
     return views.find((view) => view.id === id) ?? views[0];
 }
 
-export function settingsFor(
-    document: CadDocument,
-    viewId: string,
-): ViewSettings {
+/**
+ * How a view looks before anyone has changed it.
+ *
+ * Hidden line is right for everything drawn on a sheet: a plan, a ceiling, an
+ * elevation, a section. It is white paper and black ink because that is what
+ * it will be printed as.
+ *
+ * A 3D view is not a sheet. Opening the model in hidden line shows a white
+ * building on white ground, which reads as a broken screen rather than as a
+ * drawing convention, so it opens shaded and in its own materials. The site
+ * view is the ground itself, and is no use without them either.
+ */
+export function defaultSettingsFor(kind: CadView['kind']): ViewSettings {
+    if (kind !== 'threeD' && kind !== 'site') {
+        return DEFAULT_VIEW_SETTINGS;
+    }
+
     return {
         ...DEFAULT_VIEW_SETTINGS,
-        ...(document.viewSettings?.[viewId] ?? {}),
+        visualStyle: 'shaded',
+        naturalMaterials: true,
+    };
+}
+
+export function settingsFor(
+    document: CadDocument,
+    view: CadView,
+): ViewSettings {
+    return {
+        ...defaultSettingsFor(view.kind),
+        ...(document.viewSettings?.[view.id] ?? {}),
     };
 }
 
@@ -173,6 +212,10 @@ export function browserGroups(
             views: views.filter((view) => view.kind === 'section'),
         },
         {
+            title: 'Site',
+            views: views.filter((view) => view.kind === 'site'),
+        },
+        {
             title: 'Schedules/Quantities',
             views: views.filter((view) => view.kind === 'schedule'),
         },
@@ -191,4 +234,29 @@ export function azimuthFor(orientation: Orientation): number {
     };
 
     return azimuths[orientation];
+}
+
+/**
+ * The settings that follow from switching natural materials on or off.
+ *
+ * Materials are a colour, and two of the visual styles do not show colour:
+ * hidden line paints every face white and wireframe paints none of them. So
+ * switching materials on in either of those would change a setting and
+ * nothing visible, which is worse than the control not being there — the
+ * view is brought to a shaded one at the same time.
+ *
+ * Switching them off leaves the style alone: having asked for shading once,
+ * you probably still want it.
+ */
+export function withNaturalMaterials(
+    settings: ViewSettings,
+    on: boolean,
+): Partial<ViewSettings> {
+    const blind =
+        settings.visualStyle === 'hiddenLine' ||
+        settings.visualStyle === 'wireframe';
+
+    return on && blind
+        ? { naturalMaterials: true, visualStyle: 'shaded' }
+        : { naturalMaterials: on };
 }

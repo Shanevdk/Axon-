@@ -3,7 +3,6 @@
 namespace App\Mcp\Tools;
 
 use App\Mcp\Tools\Concerns\MutatesDocuments;
-use App\Models\Project;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Laravel\Mcp\Request;
@@ -27,12 +26,16 @@ class DeleteElementsTool extends Tool
     public function handle(Request $request): Response|ResponseFactory
     {
         $validated = $request->validate([
-            'project_id' => ['required', 'integer', 'exists:projects,id'],
+            'project_id' => ['required', 'integer'],
             'element_ids' => ['required', 'array', 'min:1', 'max:500'],
             'element_ids.*' => ['string'],
         ]);
 
-        $project = Project::query()->findOrFail($validated['project_id']);
+        $project = $this->visibleProjects()->find($validated['project_id']);
+
+        if ($project === null) {
+            return $this->refuseUnknownProject();
+        }
 
         if ($away = $this->refuseIfAway($project)) {
             return $away;

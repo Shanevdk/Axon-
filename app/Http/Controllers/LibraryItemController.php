@@ -80,9 +80,14 @@ class LibraryItemController extends Controller
 
         return Inertia::render('library/designer', [
             'editing' => $editing,
-            // Whether the terminal's `claude` can answer in the page from
-            // the CLI on this machine — the subscription path.
-            'claudeCodeReady' => $claude->isAvailable(),
+            // Two separate answers, because they are two separate problems:
+            // whether the CLI is on this machine at all, and whether this
+            // person has signed in with their own Claude account. Telling
+            // somebody to install what they already have helps nobody.
+            'claude' => [
+                'installed' => $claude->isAvailable(),
+                'signedIn' => $request->user()->claudeAccount !== null,
+            ],
             // The AI accounts this user has connected — provider and model
             // only. The keys stay on the server, always.
             'connections' => $request->user()
@@ -288,9 +293,10 @@ class LibraryItemController extends Controller
      * One turn with Claude Code on this machine.
      *
      * The same board protocol as the keyed terminal, but the answer comes
-     * from the CLI the person is already signed in to — so this costs
-     * nothing beyond their subscription. The session id travels with the
-     * conversation so each turn remembers the last.
+     * from the Claude account this person signed in with — so it costs
+     * nothing beyond their own subscription, and nothing at all to anybody
+     * else. The session id travels with the conversation so each turn
+     * remembers the last.
      */
     public function claudeCode(Request $request, RunClaudeCode $claude, DraftItemParts $draft): JsonResponse
     {
@@ -300,8 +306,17 @@ class LibraryItemController extends Controller
             'parts' => ['nullable', 'array', 'max:'.CompileItemParts::MAX_PARTS],
         ]);
 
+        $account = $request->user()->claudeAccount;
+
+        if ($account === null) {
+            return response()->json([
+                'message' => __('Sign in with your Claude account to use the terminal. A turn is drawn from your own subscription, so it has to be yours.'),
+            ], 403);
+        }
+
         try {
             $answer = $claude->handle(
+                $account,
                 $validated['prompt'],
                 $draft->terminalBrief($validated['parts'] ?? []),
                 $validated['session'] ?? null,

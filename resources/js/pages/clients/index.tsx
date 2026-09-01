@@ -3,10 +3,14 @@ import {
     Building2,
     ChevronDown,
     Clock,
+    Copy,
+    KeyRound,
     Mail,
+    MessageSquare,
     Pencil,
     Phone,
     Plus,
+    RefreshCw,
     Trash2,
     Unlink,
 } from 'lucide-react';
@@ -28,6 +32,7 @@ import type { CadDocument, Units } from '@/lib/cad/types';
 import { formatDuration, formatRelativeDay } from '@/lib/duration';
 import { cn } from '@/lib/utils';
 import { destroy, index, store, update } from '@/routes/clients';
+import { reissue as reissueNumber } from '@/routes/clients/portal-number';
 import { assign, unassign } from '@/routes/clients/projects';
 import { show as showProject } from '@/routes/projects';
 
@@ -42,6 +47,13 @@ type DrawingRow = {
     opened_at: string | null;
     summary: { levels: number; walls: number; rooms: number };
     preview: CadDocument | null;
+    comments: CommentRow[];
+};
+
+type CommentRow = {
+    id: number;
+    body: string;
+    created_at: string | null;
 };
 
 type ClientRow = {
@@ -51,6 +63,10 @@ type ClientRow = {
     email: string | null;
     phone: string | null;
     notes: string | null;
+    portal_username: string | null;
+    portal_number: string;
+    portal_url: string;
+    portal_seen_at: string | null;
     total_seconds: number;
     last_worked_at: string | null;
     projects: DrawingRow[];
@@ -91,7 +107,7 @@ export default function ClientsIndex({
             <div className="flex h-full flex-1 flex-col gap-8 p-6">
                 <header className="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-6">
                     <div>
-                        <p className="ax-eyebrow text-muted-foreground">Axon</p>
+                        <p className="ax-eyebrow text-muted-foreground">Vanhaven</p>
                         <h1 className="mt-2 text-2xl font-light tracking-tight">
                             Clients
                         </h1>
@@ -266,6 +282,8 @@ function ClientCard({
                 </div>
             </div>
 
+            <PortalPanel client={client} />
+
             {client.projects.length === 0 ? (
                 <p className="px-5 py-6 text-sm text-muted-foreground">
                     No drawings assigned yet.
@@ -332,11 +350,105 @@ function ClientCard({
                                     <Unlink className="size-4" />
                                 </IconButton>
                             </div>
+
+                            {drawing.comments.length > 0 && (
+                                <ul className="space-y-1.5 border-t border-dashed border-border bg-sand/5 px-5 py-3 pl-[4.75rem]">
+                                    {drawing.comments.map((comment) => (
+                                        <li
+                                            key={comment.id}
+                                            className="flex gap-2 text-xs"
+                                        >
+                                            <MessageSquare className="mt-0.5 size-3 shrink-0 text-sand" />
+                                            <span className="whitespace-pre-wrap">
+                                                {comment.body}
+                                            </span>
+                                            <span className="ml-auto shrink-0 text-muted-foreground">
+                                                {formatRelativeDay(
+                                                    comment.created_at,
+                                                )}
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
                         </li>
                     ))}
                 </ul>
             )}
         </article>
+    );
+}
+
+/* --------------------------------------------------------- client portal */
+
+/**
+ * What the client needs to look in on their own house: a handle and a
+ * number, read out or emailed. The number is the whole credential, so it is
+ * shown in full here and nowhere else.
+ */
+function PortalPanel({ client }: { client: ClientRow }) {
+    const [copied, setCopied] = useState(false);
+
+    const copy = () => {
+        void navigator.clipboard
+            .writeText(
+                `${client.portal_url}\nUsername: ${client.portal_username}\nNumber: ${client.portal_number}`,
+            )
+            .then(() => {
+                setCopied(true);
+                window.setTimeout(() => setCopied(false), 2000);
+            });
+    };
+
+    return (
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-border px-5 py-3">
+            <span className="ax-eyebrow flex items-center gap-1.5 text-muted-foreground">
+                <KeyRound className="size-3.5 text-sand" />
+                Client portal
+            </span>
+
+            <span className="text-xs text-muted-foreground">
+                {client.portal_username}
+            </span>
+
+            <span className="font-mono text-sm tracking-wider tabular-nums">
+                {client.portal_number}
+            </span>
+
+            <span className="text-[0.7rem] text-muted-foreground">
+                {client.portal_seen_at
+                    ? `looked in ${formatRelativeDay(client.portal_seen_at).toLowerCase()}`
+                    : 'never looked in'}
+            </span>
+
+            <div className="ml-auto flex items-center gap-1">
+                <Button variant="ghost" size="sm" onClick={copy}>
+                    <Copy className="size-3.5" />
+                    {copied ? 'Copied' : 'Copy sign-in'}
+                </Button>
+
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                        if (
+                            window.confirm(
+                                `Issue ${client.name} a new number? The one they have now will stop working.`,
+                            )
+                        ) {
+                            router.post(
+                                reissueNumber(client.id),
+                                {},
+                                { preserveScroll: true },
+                            );
+                        }
+                    }}
+                >
+                    <RefreshCw className="size-3.5" />
+                    New number
+                </Button>
+            </div>
+        </div>
     );
 }
 

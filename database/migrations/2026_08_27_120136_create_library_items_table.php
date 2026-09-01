@@ -12,7 +12,7 @@ return new class extends Migration
      *
      * The model library: reusable items the whole studio can place. The
      * payload is the triangle mesh (plus the part list when the item was
-     * designed in Axon), and the thumbnail is a small SVG drawn in the
+     * designed in Vanhaven), and the thumbnail is a small SVG drawn in the
      * browser when the item was saved.
      */
     public function up(): void

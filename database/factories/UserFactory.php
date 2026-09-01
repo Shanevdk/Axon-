@@ -26,7 +26,11 @@ class UserFactory extends Factory
     {
         return [
             'name' => fake()->name(),
-            'email' => fake()->unique()->safeEmail(),
+            // A user of Vanhaven is somebody at the studio, so the address is one
+            // the sign-in rule actually admits — see App\Rules\WorkEmail.
+            'email' => fake()->unique()->userName().'@'.(
+                config('workmail.domains')[0] ?? 'vanhaven.ca'
+            ),
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
             'remember_token' => Str::random(10),

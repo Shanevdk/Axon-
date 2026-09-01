@@ -3,7 +3,7 @@
  *
  * Because the model lives on the machine that drew it, getting it onto a
  * second machine means carrying a file: download it there, open it here. The
- * file is the plain Axon model document, the same thing the export dialog
+ * file is the plain Vanhaven model document, the same thing the export dialog
  * writes, so a backup and a transfer are the same artefact.
  */
 
@@ -61,13 +61,13 @@ export function parseDrawing(contents: string): CadDocument {
         parsed = JSON.parse(contents);
     } catch {
         throw new Error(
-            'That file is not an Axon drawing — it is not even JSON.',
+            'That file is not an Vanhaven drawing — it is not even JSON.',
         );
     }
 
     if (!isCadDocument(parsed)) {
         throw new Error(
-            'That JSON is not an Axon drawing. Export one with File → Export → Axon model.',
+            'That JSON is not an Vanhaven drawing. Export one with File → Export → Vanhaven model.',
         );
     }
 

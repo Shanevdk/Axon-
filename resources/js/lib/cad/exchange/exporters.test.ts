@@ -3,16 +3,21 @@ import { testDocument } from '@/lib/cad/__fixtures__/document';
 import {
     buildExport,
     describeExtents,
+    EXPORT_FORMATS,
     solidsForExport,
 } from '@/lib/cad/exchange';
+import { exportCollada } from '@/lib/cad/exchange/collada';
 import { exportDxf, parseDxf } from '@/lib/cad/exchange/dxf';
+import { exportGltf } from '@/lib/cad/exchange/gltf';
 import { exportObj } from '@/lib/cad/exchange/obj';
+import { exportPly } from '@/lib/cad/exchange/ply';
 import { exportStep } from '@/lib/cad/exchange/step';
 import {
     countStlTriangles,
     exportAsciiStl,
     exportBinaryStl,
 } from '@/lib/cad/exchange/stl';
+import { exportSvg } from '@/lib/cad/exchange/svg';
 import { buildSolids } from '@/lib/cad/solids';
 
 const document = testDocument();
@@ -291,5 +296,181 @@ describe('buildExport', () => {
         expect(
             describeExtents({ ...base, format: 'stl', scope: 'model' }),
         ).toBe('6,300 × 4,300 × 3,200 mm');
+    });
+});
+
+/* ------------------------------------------------------ the newer formats */
+
+describe('glTF', () => {
+    const gltf = JSON.parse(exportGltf(solids, { name: 'test' })) as {
+        asset: { version: string };
+        scenes: { nodes: number[] }[];
+        meshes: { name: string; primitives: { attributes: { POSITION: number } }[] }[];
+        accessors: { count: number; type: string; min?: number[]; max?: number[] }[];
+        buffers: { byteLength: number; uri: string }[];
+        materials: unknown[];
+    };
+
+    it('says which version of the format it is', () => {
+        expect(gltf.asset.version).toBe('2.0');
+    });
+
+    it('carries its geometry inside the one file', () => {
+        expect(gltf.buffers).toHaveLength(1);
+        expect(gltf.buffers[0].uri.startsWith('data:application/octet-stream;base64,')).toBe(
+            true,
+        );
+        expect(gltf.buffers[0].byteLength).toBeGreaterThan(0);
+    });
+
+    it('groups the model into named parts rather than one node each', () => {
+        expect(gltf.meshes.length).toBeGreaterThan(1);
+        expect(gltf.meshes.map((mesh) => mesh.name)).toContain('wall');
+        // A mesh per category, not a mesh per solid.
+        expect(gltf.meshes.length).toBeLessThan(solids.length);
+    });
+
+    it('bounds every position accessor, as viewers need to frame it', () => {
+        const positions = gltf.accessors.filter(
+            (accessor) => accessor.type === 'VEC3',
+        );
+
+        expect(positions.length).toBeGreaterThan(0);
+
+        positions.forEach((accessor) => {
+            expect(accessor.min).toHaveLength(3);
+            expect(accessor.max).toHaveLength(3);
+            accessor.min?.forEach((value) => expect(Number.isFinite(value)).toBe(true));
+        });
+    });
+
+    it('gives every part a material', () => {
+        expect(gltf.materials).toHaveLength(gltf.meshes.length);
+    });
+
+    it('turns the model Y-up, which is what glTF viewers assume', () => {
+        const zUp = JSON.parse(exportGltf(solids, { upAxis: 'z' })) as typeof gltf;
+
+        // The same model, different axes: the buffers cannot match.
+        expect(zUp.buffers[0].uri).not.toBe(gltf.buffers[0].uri);
+    });
+});
+
+describe('PLY', () => {
+    const ply = exportPly(solids);
+    const lines = ply.split('\n');
+
+    it('writes a header that matches the body', () => {
+        const vertices = Number(
+            /element vertex (\d+)/.exec(ply)?.[1] ?? '0',
+        );
+        const faces = Number(/element face (\d+)/.exec(ply)?.[1] ?? '0');
+        const start = lines.indexOf('end_header') + 1;
+
+        expect(vertices).toBeGreaterThan(0);
+        expect(faces).toBe(vertices / 3);
+        // Every row the header promised, and no more.
+        expect(lines.slice(start).filter((line) => line !== '')).toHaveLength(
+            vertices + faces,
+        );
+    });
+
+    it('carries colour, which is what STL cannot', () => {
+        expect(ply).toContain('property uchar red');
+
+        const start = lines.indexOf('end_header') + 1;
+
+        expect(lines[start].split(' ')).toHaveLength(6);
+    });
+});
+
+describe('COLLADA', () => {
+    const dae = exportCollada(solids, { name: 'test', timestamp: 'now' });
+
+    it('is a COLLADA document', () => {
+        expect(dae).toContain('<COLLADA');
+        expect(dae).toContain('version="1.4.1"');
+    });
+
+    it('says it is in millimetres, so SketchUp does not guess', () => {
+        expect(dae).toContain('<unit meter="0.001" name="millimeter"/>');
+        expect(dae).toContain('<up_axis>Z_UP</up_axis>');
+    });
+
+    it('gives each geometry a material and each material an effect', () => {
+        const geometries = (dae.match(/<geometry /g) ?? []).length;
+
+        expect(geometries).toBeGreaterThan(0);
+        expect((dae.match(/<material /g) ?? []).length).toBe(geometries);
+        expect((dae.match(/<effect /g) ?? []).length).toBe(geometries);
+    });
+
+    it('counts its triangles rather than its corners', () => {
+        const [, count] = /<triangles count="(\d+)"/.exec(dae) ?? [];
+        const [, floats] = /<float_array [^>]*count="(\d+)"/.exec(dae) ?? [];
+
+        // Three vertices of three floats to a triangle.
+        expect(Number(floats)).toBe(Number(count) * 9);
+    });
+});
+
+describe('SVG', () => {
+    const svg = exportSvg(document, { levelId: 'level-1', name: 'Plan' });
+
+    it('is a standalone drawing with a real size on the page', () => {
+        expect(svg).toContain('<svg');
+        expect(svg).toMatch(/width="[\d.]+mm"/);
+        expect(svg).toContain('viewBox=');
+    });
+
+    it('draws the walls as poché and cuts the openings out of them', () => {
+        // Solid wall bodies, then white where the door and window are.
+        expect((svg.match(/fill="#2b2926"/g) ?? []).length).toBeGreaterThan(0);
+        expect((svg.match(/fill="#ffffff"/g) ?? []).length).toBeGreaterThan(1);
+    });
+
+    it('flips the plan, because SVG counts down the page and north is up', () => {
+        // The fixture runs from y=0 to y=4000; upside down that is -4000..0.
+        expect(svg).toMatch(/viewBox="[-\d. ]*-4[\d.]+/);
+    });
+
+    it('labels the rooms', () => {
+        expect(svg).toContain('<text');
+    });
+
+    it('gives an empty level a valid file rather than a broken one', () => {
+        const blank = exportSvg(
+            { ...document, elements: [] },
+            { levelId: 'level-1' },
+        );
+
+        expect(blank).toContain('<svg');
+        expect(blank).toContain('</svg>');
+    });
+});
+
+describe('the format registry', () => {
+    const base = { document, levelId: 'level-1', name: 'Kits House' } as const;
+
+    it('offers every format the dialog lists, and builds each one', () => {
+        EXPORT_FORMATS.forEach((format) => {
+            const built = buildExport({
+                ...base,
+                format: format.id,
+                scope: 'model',
+            });
+
+            expect(built.files.length).toBeGreaterThan(0);
+            expect(built.bytes).toBeGreaterThan(0);
+            expect(built.files[0].filename).toBe(
+                `kits-house.${format.extension}`,
+            );
+        });
+    });
+
+    it('has no two formats sharing an id', () => {
+        const ids = EXPORT_FORMATS.map((format) => format.id);
+
+        expect(new Set(ids).size).toBe(ids.length);
     });
 });

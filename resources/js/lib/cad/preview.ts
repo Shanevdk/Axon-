@@ -13,6 +13,30 @@ import type { CadDocument, CadElement, MeshElement } from '@/lib/cad/types';
 /** Kinds the plan thumbnail actually draws. */
 const DRAWABLE = ['wall', 'door', 'window', 'floor', 'room', 'mesh'] as const;
 
+/**
+ * Kinds the client model leaves behind.
+ *
+ * Everything here is drawn on a sheet rather than built on site — a client
+ * walking their house has no use for a grid line or a revision cloud, and a
+ * mesh is excluded on size alone, since one import can carry tens of
+ * thousands of vertices. Stated as what to drop rather than what to keep, so
+ * a new element kind reaches the client by default instead of being
+ * silently missing until somebody notices.
+ */
+const NOT_BUILT = [
+    'dimension',
+    'text',
+    'line',
+    'grid',
+    'referencePlane',
+    'revisionCloud',
+    'section',
+    'spotElevation',
+    'propertyLine',
+    'walkthrough',
+    'mesh',
+] as const;
+
 /** Counts shown on the projects page and totalled on the dashboard. */
 export type DocumentSummary = {
     levels: number;
@@ -63,6 +87,39 @@ export function buildPreview(document: CadDocument): CadDocument | null {
         doorTypes: document.doorTypes,
         windowTypes: document.windowTypes,
         elements,
+        viewSettings: {},
+    };
+}
+
+/**
+ * Reduce a model to the house itself, for the client portal.
+ *
+ * Unlike the thumbnail preview this keeps every level, because a client is
+ * walking through the building rather than glancing at one floor. It is
+ * still far short of the working drawing: no annotation, no setting out, no
+ * imported meshes, and none of the site information the studio works with.
+ *
+ * Returns null when there is nothing built to show.
+ */
+export function buildClientModel(document: CadDocument): CadDocument | null {
+    const elements = document.elements.filter(
+        (element) => !(NOT_BUILT as readonly string[]).includes(element.kind),
+    );
+
+    if (elements.length === 0) {
+        return null;
+    }
+
+    return {
+        version: document.version,
+        units: document.units,
+        levels: document.levels,
+        wallTypes: document.wallTypes,
+        doorTypes: document.doorTypes,
+        windowTypes: document.windowTypes,
+        elements,
+        // The terrain is the studio's survey, not the client's business, and
+        // it is the largest thing in the document after the meshes.
         viewSettings: {},
     };
 }

@@ -18,6 +18,7 @@ import type {
     FixtureElement,
     FloorElement,
     FootingElement,
+    Material,
     MeshElement,
     OpeningElement,
     PadElement,
@@ -67,6 +68,18 @@ export type Solid = {
     faces: Vec3[][];
     /** Lowest point of the solid, used to stack slabs when drawing. */
     base: number;
+    /**
+     * What this surface actually is, when the builder knows better than the
+     * category does. An assembly layer sets it — a wall's sheathing and its
+     * gypsum are both part of a 'wall' but are not the same stuff. Absent
+     * means read it off the category and the element's construction.
+     */
+    material?: Material;
+    /**
+     * Which layer of an assembly this came from, so the exploded view can
+     * move a wall's twenty studs as one piece of the sandwich.
+     */
+    assemblyLayer?: number;
 };
 
 export type SolidScope = {

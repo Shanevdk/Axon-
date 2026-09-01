@@ -2,16 +2,21 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\CreateInvitedUserRequest;
 use App\Mail\OrganizationInvitationMail;
 use App\Models\Organization;
 use App\Models\OrganizationInvitation;
 use App\Models\User;
+use App\Rules\WorkEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
+use Inertia\Response;
 use Throwable;
 
 class OrganizationInvitationController extends Controller
@@ -25,7 +30,9 @@ class OrganizationInvitationController extends Controller
         $organization = $this->headedOrganization($request);
 
         $validated = $request->validate([
-            'email' => ['required', 'string', 'email', 'max:255'],
+            // Inviting a personal address would only produce an account that
+            // cannot sign in, so it is refused here rather than later.
+            'email' => ['required', 'string', 'email', 'max:255', new WorkEmail],
         ]);
 
         $email = OrganizationInvitation::normaliseEmail($validated['email']);
@@ -101,17 +108,94 @@ class OrganizationInvitationController extends Controller
         $user = $request->user();
 
         if ($user === null) {
-            // Remembered so registration can finish the job.
+            // Nobody signs themselves up, so the link itself is the way in.
             $request->session()->put('invitation', [
                 'token' => $invitation->token,
                 'email' => $invitation->email,
                 'organization' => $invitation->organization->name,
             ]);
 
-            return to_route('register');
+            return to_route('invitations.setup');
         }
 
         return $this->settle($request, $invitation, $user);
+    }
+
+    /**
+     * The page an invited person lands on: their address is already settled,
+     * so all that is left is a name and a password.
+     */
+    public function setUp(Request $request): Response|RedirectResponse
+    {
+        $invitation = $this->invitationInSession();
+
+        if ($invitation === null) {
+            return $this->rejectLink($request);
+        }
+
+        return Inertia::render('auth/set-up', [
+            'passwordRules' => Password::defaults()->toPasswordRulesString(),
+            'email' => $invitation->email,
+            'organization' => $invitation->organization->name,
+        ]);
+    }
+
+    /**
+     * Open the account the invitation was addressed to.
+     *
+     * The address comes from the invitation rather than the form, so nobody
+     * can turn a link addressed to one person into an account for another.
+     */
+    public function open(CreateInvitedUserRequest $request): RedirectResponse
+    {
+        $invitation = $this->invitationInSession();
+
+        if ($invitation === null) {
+            return $this->rejectLink($request);
+        }
+
+        $user = User::create([
+            'name' => $request->string('name')->toString(),
+            'email' => $invitation->email,
+            'password' => $request->string('password')->toString(),
+        ]);
+
+        // Invited by name, so the address needs no second proof.
+        $user->forceFill(['email_verified_at' => now()])->save();
+
+        $invitation->claim($user);
+        $request->session()->forget('invitation');
+
+        Auth::login($user);
+        $request->session()->regenerate();
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => __('Welcome to :organization.', [
+                'organization' => $invitation->organization->name,
+            ]),
+        ]);
+
+        return redirect()->intended(route('home'));
+    }
+
+    /**
+     * The pending invitation the visitor is carrying, if it is still good.
+     */
+    private function invitationInSession(): ?OrganizationInvitation
+    {
+        $token = session('invitation.token');
+
+        if (! is_string($token)) {
+            return null;
+        }
+
+        $invitation = OrganizationInvitation::query()
+            ->where('token', $token)
+            ->with('organization')
+            ->first();
+
+        return $invitation?->isPending() ? $invitation : null;
     }
 
     /**

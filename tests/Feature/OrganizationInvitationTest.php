@@ -5,6 +5,7 @@ use App\Models\Organization;
 use App\Models\OrganizationInvitation;
 use App\Models\User;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Route;
 use Inertia\Testing\AssertableInertia;
 
 beforeEach(function () {
@@ -21,12 +22,12 @@ test('the head invites someone by email', function () {
     $organization = Organization::factory()->create();
 
     $this->actingAs($organization->owner)
-        ->post(route('organization.invitations.store'), ['email' => 'sam@studio.com'])
+        ->post(route('organization.invitations.store'), ['email' => 'sam@vanhaven.ca'])
         ->assertRedirect();
 
     $invitation = OrganizationInvitation::query()->sole();
 
-    expect($invitation->email)->toBe('sam@studio.com')
+    expect($invitation->email)->toBe('sam@vanhaven.ca')
         ->and($invitation->organization_id)->toBe($organization->id)
         ->and($invitation->invited_by)->toBe($organization->owner_id)
         ->and($invitation->accepted_at)->toBeNull()
@@ -34,7 +35,7 @@ test('the head invites someone by email', function () {
 
     Mail::assertSent(
         OrganizationInvitationMail::class,
-        fn (OrganizationInvitationMail $mail): bool => $mail->hasTo('sam@studio.com')
+        fn (OrganizationInvitationMail $mail): bool => $mail->hasTo('sam@vanhaven.ca')
             && $mail->invitation->is($invitation)
     );
 });
@@ -60,9 +61,9 @@ test('the address is stored in lower case so matching is not case sensitive', fu
     $organization = Organization::factory()->create();
 
     $this->actingAs($organization->owner)
-        ->post(route('organization.invitations.store'), ['email' => '  Sam@Studio.COM ']);
+        ->post(route('organization.invitations.store'), ['email' => '  Sam@VanHaven.CA ']);
 
-    expect(OrganizationInvitation::query()->sole()->email)->toBe('sam@studio.com');
+    expect(OrganizationInvitation::query()->sole()->email)->toBe('sam@vanhaven.ca');
 });
 
 test('an invitation needs a real email address', function () {
@@ -83,11 +84,11 @@ test('someone already in the organization cannot be invited again', function () 
     $organization = Organization::factory()->create();
     User::factory()->create([
         'organization_id' => $organization->id,
-        'email' => 'sam@studio.com',
+        'email' => 'sam@vanhaven.ca',
     ]);
 
     $this->actingAs($organization->owner)
-        ->post(route('organization.invitations.store'), ['email' => 'SAM@studio.com'])
+        ->post(route('organization.invitations.store'), ['email' => 'SAM@vanhaven.ca'])
         ->assertSessionHasErrors('email');
 
     expect(OrganizationInvitation::query()->count())->toBe(0);
@@ -97,12 +98,12 @@ test('inviting the same address twice refreshes the invitation rather than dupli
     $organization = Organization::factory()->create();
 
     $this->actingAs($organization->owner)
-        ->post(route('organization.invitations.store'), ['email' => 'sam@studio.com']);
+        ->post(route('organization.invitations.store'), ['email' => 'sam@vanhaven.ca']);
 
     $first = OrganizationInvitation::query()->sole()->token;
 
     $this->actingAs($organization->owner)
-        ->post(route('organization.invitations.store'), ['email' => 'sam@studio.com']);
+        ->post(route('organization.invitations.store'), ['email' => 'sam@vanhaven.ca']);
 
     expect(OrganizationInvitation::query()->count())->toBe(1)
         ->and(OrganizationInvitation::query()->sole()->token)->not->toBe($first);
@@ -115,7 +116,7 @@ test('an employee cannot invite anyone', function () {
     $employee = User::factory()->create(['organization_id' => $organization->id]);
 
     $this->actingAs($employee)
-        ->post(route('organization.invitations.store'), ['email' => 'sam@studio.com'])
+        ->post(route('organization.invitations.store'), ['email' => 'sam@vanhaven.ca'])
         ->assertForbidden();
 
     Mail::assertNothingSent();
@@ -123,7 +124,7 @@ test('an employee cannot invite anyone', function () {
 
 test('someone with no organization cannot invite anyone', function () {
     $this->actingAs(User::factory()->create())
-        ->post(route('organization.invitations.store'), ['email' => 'sam@studio.com'])
+        ->post(route('organization.invitations.store'), ['email' => 'sam@vanhaven.ca'])
         ->assertNotFound();
 });
 
@@ -263,48 +264,91 @@ test('a member of another organization is not moved by following a link', functi
         ->and($invitation->fresh()->accepted_at)->toBeNull();
 });
 
-test('a guest following the link is sent to register and joins on sign up', function () {
+test('a guest following the link opens their account and joins the studio', function () {
     $organization = Organization::factory()->create(['name' => 'Ridgeway']);
     $invitation = OrganizationInvitation::factory()
         ->for($organization)
-        ->create(['email' => 'sam@studio.com']);
+        ->create(['email' => 'sam@vanhaven.ca']);
 
     $this->get(route('invitations.accept', $invitation->token))
-        ->assertRedirect(route('register'));
+        ->assertRedirect(route('invitations.setup'));
 
     expect(session('invitation.token'))->toBe($invitation->token)
-        ->and(session('invitation.email'))->toBe('sam@studio.com')
+        ->and(session('invitation.email'))->toBe('sam@vanhaven.ca')
         ->and(session('invitation.organization'))->toBe('Ridgeway');
 
-    $this->get(route('register'))
+    $this->get(route('invitations.setup'))
         ->assertInertia(fn (AssertableInertia $page) => $page
-            ->where('invitation.email', 'sam@studio.com')
-            ->where('invitation.organization', 'Ridgeway')
+            ->component('auth/set-up')
+            ->where('email', 'sam@vanhaven.ca')
+            ->where('organization', 'Ridgeway')
+            ->etc()
         );
 
-    $this->post(route('register.store'), [
+    $this->post(route('invitations.open'), [
         'name' => 'Sam Carter',
-        'email' => 'sam@studio.com',
         'password' => 'drafting-table-98',
         'password_confirmation' => 'drafting-table-98',
-    ]);
+    ])->assertRedirect(route('home'));
 
-    $sam = User::query()->where('email', 'sam@studio.com')->sole();
+    $sam = User::query()->where('email', 'sam@vanhaven.ca')->sole();
 
     expect($sam->organization_id)->toBe($organization->id)
+        ->and($sam->email_verified_at)->not->toBeNull()
         ->and($invitation->fresh()->accepted_at)->not->toBeNull()
-        ->and(session('invitation'))->toBeNull();
+        ->and(session('invitation'))->toBeNull()
+        // Opening the account signs them straight in.
+        ->and(auth()->id())->toBe($sam->id);
 });
 
-test('signing up without an invitation leaves the user on their own', function () {
-    $this->post(route('register.store'), [
-        'name' => 'Solo Drafter',
-        'email' => 'solo@studio.com',
+test('the address comes from the invitation, not from the form', function () {
+    $organization = Organization::factory()->create();
+    $invitation = OrganizationInvitation::factory()
+        ->for($organization)
+        ->create(['email' => 'sam@vanhaven.ca']);
+
+    $this->get(route('invitations.accept', $invitation->token));
+
+    // A crafted form cannot turn Sam's invitation into somebody else's account.
+    $this->post(route('invitations.open'), [
+        'name' => 'Impostor',
+        'email' => 'someone.else@vanhaven.ca',
         'password' => 'drafting-table-98',
         'password_confirmation' => 'drafting-table-98',
     ]);
 
-    expect(User::query()->where('email', 'solo@studio.com')->sole()->organization_id)->toBeNull();
+    expect(User::query()->where('email', 'someone.else@vanhaven.ca')->exists())->toBeFalse()
+        ->and(User::query()->where('email', 'sam@vanhaven.ca')->exists())->toBeTrue();
+});
+
+test('there is no way in without an invitation', function () {
+    // The route Fortify used to register people is gone entirely.
+    expect(Route::has('register'))->toBeFalse()
+        ->and(Route::has('register.store'))->toBeFalse();
+
+    // And the set-up page refuses anyone not carrying a live invitation.
+    $this->get(route('invitations.setup'))->assertRedirect(route('login'));
+
+    $this->post(route('invitations.open'), [
+        'name' => 'Solo Drafter',
+        'password' => 'drafting-table-98',
+        'password_confirmation' => 'drafting-table-98',
+    ])->assertRedirect(route('login'));
+
+    expect(User::query()->where('name', 'Solo Drafter')->exists())->toBeFalse();
+});
+
+test('a stale invitation cannot be used to open an account', function () {
+    $organization = Organization::factory()->create();
+    $invitation = OrganizationInvitation::factory()
+        ->for($organization)
+        ->expired()
+        ->create(['email' => 'sam@vanhaven.ca']);
+
+    $this->get(route('invitations.accept', $invitation->token))
+        ->assertRedirect(route('login'));
+
+    expect(session('invitation'))->toBeNull();
 });
 
 /*
@@ -317,7 +361,7 @@ test('the head sees what is still outstanding, complete with a link to copy', fu
     $organization = Organization::factory()->create();
     $invitation = OrganizationInvitation::factory()
         ->for($organization)
-        ->create(['email' => 'sam@studio.com']);
+        ->create(['email' => 'sam@vanhaven.ca']);
 
     OrganizationInvitation::factory()->for($organization)->expired()->create();
 
@@ -326,7 +370,7 @@ test('the head sees what is still outstanding, complete with a link to copy', fu
         ->assertInertia(fn (AssertableInertia $page) => $page
             // The stale one is left out.
             ->has('invitations', 1)
-            ->where('invitations.0.email', 'sam@studio.com')
+            ->where('invitations.0.email', 'sam@vanhaven.ca')
             ->where('invitations.0.url', $invitation->url())
             ->where('invitations.0.inviter', $organization->owner->name)
         );
@@ -344,15 +388,15 @@ test('an employee is not shown the outstanding invitations', function () {
 
 test('a user with no organization sees the invitations addressed to them', function () {
     $organization = Organization::factory()->create(['name' => 'Ridgeway']);
-    $invited = User::factory()->create(['email' => 'Sam@Studio.com']);
+    $invited = User::factory()->create(['email' => 'Sam@VanHaven.ca']);
 
     OrganizationInvitation::factory()
         ->for($organization)
-        ->create(['email' => 'sam@studio.com']);
+        ->create(['email' => 'sam@vanhaven.ca']);
 
     // Somebody else's invitation, and one that has gone stale.
-    OrganizationInvitation::factory()->create(['email' => 'other@studio.com']);
-    OrganizationInvitation::factory()->expired()->create(['email' => 'sam@studio.com']);
+    OrganizationInvitation::factory()->create(['email' => 'other@vanhaven.ca']);
+    OrganizationInvitation::factory()->expired()->create(['email' => 'sam@vanhaven.ca']);
 
     $this->actingAs($invited)
         ->get(route('organization.show'))
@@ -365,10 +409,10 @@ test('a user with no organization sees the invitations addressed to them', funct
 
 test('accepting from the page joins the organization', function () {
     $organization = Organization::factory()->create();
-    $invited = User::factory()->create(['email' => 'sam@studio.com']);
+    $invited = User::factory()->create(['email' => 'sam@vanhaven.ca']);
     $invitation = OrganizationInvitation::factory()
         ->for($organization)
-        ->create(['email' => 'sam@studio.com']);
+        ->create(['email' => 'sam@vanhaven.ca']);
 
     $this->actingAs($invited)
         ->post(route('invitations.claim', $invitation))
@@ -378,8 +422,8 @@ test('accepting from the page joins the organization', function () {
 });
 
 test('declining from the page throws the invitation away', function () {
-    $invited = User::factory()->create(['email' => 'sam@studio.com']);
-    $invitation = OrganizationInvitation::factory()->create(['email' => 'sam@studio.com']);
+    $invited = User::factory()->create(['email' => 'sam@vanhaven.ca']);
+    $invitation = OrganizationInvitation::factory()->create(['email' => 'sam@vanhaven.ca']);
 
     $this->actingAs($invited)
         ->delete(route('invitations.decline', $invitation))
@@ -390,8 +434,8 @@ test('declining from the page throws the invitation away', function () {
 });
 
 test('an invitation addressed to someone else cannot be accepted or declined', function () {
-    $stranger = User::factory()->create(['email' => 'stranger@studio.com']);
-    $invitation = OrganizationInvitation::factory()->create(['email' => 'sam@studio.com']);
+    $stranger = User::factory()->create(['email' => 'stranger@vanhaven.ca']);
+    $invitation = OrganizationInvitation::factory()->create(['email' => 'sam@vanhaven.ca']);
 
     $this->actingAs($stranger)
         ->post(route('invitations.claim', $invitation))

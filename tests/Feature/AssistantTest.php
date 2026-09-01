@@ -84,7 +84,7 @@ test('the standing brief and the transcript both travel upstream', function () {
             ->and($sent['model'])->toBe('test/model:free')
             ->and($sent['messages'])->toHaveCount(4)
             ->and($sent['messages'][0]['role'])->toBe('system')
-            ->and($sent['messages'][0]['content'])->toContain('Axon')
+            ->and($sent['messages'][0]['content'])->toContain('Vanhaven')
             ->and($sent['messages'][3]['content'])->toBe('Second question');
 
         return true;

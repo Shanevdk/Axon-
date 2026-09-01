@@ -32,7 +32,7 @@ class LibraryItemFactory extends Factory
     }
 
     /**
-     * An item that was designed in Axon and keeps its part list.
+     * An item that was designed in Vanhaven and keeps its part list.
      */
     public function designed(): static
     {

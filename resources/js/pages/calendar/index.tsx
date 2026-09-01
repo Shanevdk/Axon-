@@ -113,7 +113,7 @@ export default function CalendarIndex({
             <div className="flex h-full flex-1 flex-col gap-8 p-6">
                 <header className="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-6">
                     <div>
-                        <p className="ax-eyebrow text-muted-foreground">Axon</p>
+                        <p className="ax-eyebrow text-muted-foreground">Vanhaven</p>
                         <h1 className="mt-2 text-2xl font-light tracking-tight">
                             Calendar
                         </h1>

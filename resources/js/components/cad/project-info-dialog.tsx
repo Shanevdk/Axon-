@@ -1,4 +1,7 @@
 import { Form } from '@inertiajs/react';
+import { useState } from 'react';
+import { SitePicker } from '@/components/site-picker';
+import type { SiteSelection } from '@/components/site-picker';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -20,6 +23,9 @@ export type ProjectSummary = {
     address: string | null;
     /** Where the building is, for the code the assistant answers under. */
     jurisdiction: string | null;
+    /** The spot on the map, once one has been picked. */
+    latitude: number | null;
+    longitude: number | null;
     units: 'metric' | 'imperial';
 };
 
@@ -34,6 +40,17 @@ export function ProjectInfoDialog({
     open,
     onOpenChange,
 }: ProjectInfoDialogProps) {
+    const [site, setSite] = useState<SiteSelection>({
+        address: project.address ?? '',
+        latitude: project.latitude,
+        longitude: project.longitude,
+        region: project.jurisdiction,
+    });
+
+    const [jurisdiction, setJurisdiction] = useState(
+        project.jurisdiction ?? '',
+    );
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-lg">
@@ -93,21 +110,36 @@ export function ProjectInfoDialog({
                                 </Field>
                             </div>
 
-                            <Field label="Site address" error={errors.address}>
-                                <Input
-                                    name="address"
-                                    defaultValue={project.address ?? ''}
-                                />
-                            </Field>
+                            <SitePicker
+                                value={site}
+                                onChange={(next) => {
+                                    setSite(next);
+
+                                    // Choosing a place from the search knows
+                                    // the jurisdiction; moving the pin does
+                                    // not, and must not wipe what is there.
+                                    if (next.region !== null) {
+                                        setJurisdiction(next.region);
+                                    }
+                                }}
+                                error={
+                                    errors.address ??
+                                    errors.latitude ??
+                                    errors.longitude
+                                }
+                            />
 
                             <Field
                                 label="Jurisdiction"
                                 error={errors.jurisdiction}
-                                hint="The city, province or state, and country. Decides which building and fire code the assistant answers under."
+                                hint="The city, province or state, and country. Decides which building and fire code the assistant answers under. Filled in when you pick an address."
                             >
                                 <Input
                                     name="jurisdiction"
-                                    defaultValue={project.jurisdiction ?? ''}
+                                    value={jurisdiction}
+                                    onChange={(event) =>
+                                        setJurisdiction(event.target.value)
+                                    }
                                     placeholder="Kelowna, British Columbia, Canada"
                                 />
                             </Field>

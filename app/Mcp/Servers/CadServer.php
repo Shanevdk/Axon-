@@ -20,10 +20,10 @@ use Laravel\Mcp\Server\Attributes\Name;
 use Laravel\Mcp\Server\Attributes\Version;
 use Laravel\Mcp\Server\Tool;
 
-#[Name('Axon CAD')]
+#[Name('Vanhaven CAD')]
 #[Version('1.0.0')]
 #[Instructions(<<<'MARKDOWN'
-    This server edits Axon model documents, the way the
+    This server edits Vanhaven model documents, the way the
     Revit MCP bridge edits a Revit model.
 
     Ground rules:
@@ -38,7 +38,7 @@ use Laravel\Mcp\Server\Tool;
     - When asked to work the design board, use get-design-board and
       set-design-board. That is the item designer open in somebody's browser:
       they watch your changes appear live and can edit any number by hand.
-      This is how a Claude subscription drives Axon without API credit.
+      This is how a Claude subscription drives Vanhaven without API credit.
     - The model library is the studio's shelf of reusable items. Design
       couches, tables — anything — with design-library-item from box,
       cylinder and sketched-outline parts; people place them from the

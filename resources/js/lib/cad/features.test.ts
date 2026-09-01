@@ -17,6 +17,8 @@ import {
 } from '@/lib/cad/model';
 import {
     cameraBasis,
+    pickAt,
+    resolvePick,
     tourLength,
     tourPose,
     walkOrbit,
@@ -42,7 +44,7 @@ import type {
     WallElement,
     WindowElement,
 } from '@/lib/cad/types';
-import { deriveViews } from '@/lib/cad/views';
+import { browserGroups, deriveViews } from '@/lib/cad/views';
 
 function baseDocument(): CadDocument {
     return {
@@ -461,6 +463,66 @@ describe('the site', () => {
     });
 });
 
+describe('picking in the model view', () => {
+    const square = (x: number, y: number, size: number) => [
+        { x, y },
+        { x: x + size, y },
+        { x: x + size, y: y + size },
+        { x, y: y + size },
+    ];
+
+    it('picks the surface nearest the eye, not the one behind it', () => {
+        // draw3d hands back its targets sorted nearest first, so the wall in
+        // front is the one picked even though both cover the cursor.
+        const targets = [
+            { elementId: 'front', polygon: square(0, 0, 100), depth: 1000 },
+            { elementId: 'behind', polygon: square(0, 0, 100), depth: 9000 },
+        ];
+
+        expect(pickAt(targets, { x: 50, y: 50 })).toBe('front');
+        expect(pickAt(targets, { x: 500, y: 500 })).toBeNull();
+    });
+
+    it('replaces the selection on a plain click', () => {
+        expect(
+            resolvePick(['old'], 'wall-1', { adding: false, removing: false }),
+        ).toEqual(['wall-1']);
+    });
+
+    it('adds with Ctrl and never lists the same thing twice', () => {
+        expect(
+            resolvePick(['a'], 'b', { adding: true, removing: false }),
+        ).toEqual(['a', 'b']);
+
+        expect(
+            resolvePick(['a', 'b'], 'b', { adding: true, removing: false }),
+        ).toEqual(['a', 'b']);
+    });
+
+    it('takes away with Shift', () => {
+        expect(
+            resolvePick(['a', 'b'], 'a', { adding: false, removing: true }),
+        ).toEqual(['b']);
+    });
+
+    it('clears on a plain click past the building, and only then', () => {
+        const held = ['a', 'b'];
+
+        expect(
+            resolvePick(held, null, { adding: false, removing: false }),
+        ).toEqual([]);
+
+        // A modifier held means the miss was a fumble, not an instruction to
+        // throw away what is already picked.
+        expect(resolvePick(held, null, { adding: true, removing: false })).toBe(
+            held,
+        );
+        expect(resolvePick(held, null, { adding: false, removing: true })).toBe(
+            held,
+        );
+    });
+});
+
 describe('first person', () => {
     it('puts the eye exactly where the walk camera says, looking along yaw', () => {
         const basis = cameraBasis(
@@ -552,6 +614,23 @@ describe('section views', () => {
         expect(sectionViews).toHaveLength(1);
         expect(sectionViews[0].name).toBe('Section A');
         expect(sectionViews[0].sectionId).toBe('section-1');
+    });
+
+    it('always offers a site plan, ground or no ground', () => {
+        // The site view is where ground levels are measured in the first
+        // place, so it cannot be conditional on already having them.
+        const views = deriveViews(baseDocument()).filter(
+            (view) => view.kind === 'site',
+        );
+
+        expect(views).toHaveLength(1);
+        expect(views[0].name).toBe('Site');
+    });
+
+    it('gives the site plan its own place in the project browser', () => {
+        const groups = browserGroups(deriveViews(baseDocument()));
+
+        expect(groups.map((group) => group.title)).toContain('Site');
     });
 });
 

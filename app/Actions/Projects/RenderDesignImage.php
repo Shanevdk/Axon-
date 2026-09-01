@@ -2,6 +2,7 @@
 
 namespace App\Actions\Projects;
 
+use App\Concerns\AllowsTimeToAnswer;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -16,6 +17,8 @@ use RuntimeException;
  */
 class RenderDesignImage
 {
+    use AllowsTimeToAnswer;
+
     /**
      * The longest a prompt may be before the URL becomes unreasonable.
      */
@@ -28,7 +31,9 @@ class RenderDesignImage
      */
     public function handle(string $prompt, int $width, int $height, int $seed): string
     {
-        $response = Http::timeout((int) config('services.pollinations.timeout'))
+        $response = Http::timeout($this->allowSecondsToAnswer(
+            (int) config('services.pollinations.timeout'),
+        ))
             ->withHeaders(['Accept' => 'image/*'])
             ->get($this->endpoint($prompt), [
                 'width' => $width,

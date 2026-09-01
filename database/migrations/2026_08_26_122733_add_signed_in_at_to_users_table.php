@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Schema;
 /**
  * Remembers that someone has been here before.
  *
- * A first sign-in lands on the front page, which is where Axon explains
+ * A first sign-in lands on the front page, which is where Vanhaven explains
  * itself; every sign-in after that goes straight to the studio. Null means
  * they have never arrived, so existing accounts get the introduction once.
  */

@@ -1,17 +1,32 @@
+import { exportCollada } from '@/lib/cad/exchange/collada';
 import { exportDxf } from '@/lib/cad/exchange/dxf';
+import { exportGltf } from '@/lib/cad/exchange/gltf';
+import { exportIfc } from '@/lib/cad/exchange/ifc';
 import { exportObj } from '@/lib/cad/exchange/obj';
+import { exportPly } from '@/lib/cad/exchange/ply';
 import { exportStep } from '@/lib/cad/exchange/step';
 import {
     countStlTriangles,
     exportAsciiStl,
     exportBinaryStl,
 } from '@/lib/cad/exchange/stl';
+import { exportSvg } from '@/lib/cad/exchange/svg';
 import { buildSolids, boundsOfSolids } from '@/lib/cad/solids';
 import type { Solid, Vec3 } from '@/lib/cad/solids';
 import type { CadDocument } from '@/lib/cad/types';
 
 export type ExportFormatId =
-    'step' | 'stl' | 'stl-ascii' | 'obj' | 'dxf' | 'json';
+    | 'ifc'
+    | 'step'
+    | 'stl'
+    | 'stl-ascii'
+    | 'obj'
+    | 'gltf'
+    | 'collada'
+    | 'ply'
+    | 'dxf'
+    | 'svg'
+    | 'json';
 
 export type ExportScopeId = 'model' | 'level' | 'selection';
 
@@ -56,6 +71,14 @@ export type ExportFormat = {
 
 export const EXPORT_FORMATS: ExportFormat[] = [
     {
+        id: 'ifc',
+        label: 'IFC 4',
+        extension: 'ifc',
+        description:
+            'The BIM exchange format — opens in Revit, ArchiCAD and Solibri, classified.',
+        dimension: '3d',
+    },
+    {
         id: 'step',
         label: 'STEP (AP214)',
         extension: 'step',
@@ -86,6 +109,29 @@ export const EXPORT_FORMATS: ExportFormat[] = [
         dimension: '3d',
     },
     {
+        id: 'gltf',
+        label: 'glTF 2.0',
+        extension: 'gltf',
+        description:
+            'One file the web opens: browser viewers, phone AR, model hosts.',
+        dimension: '3d',
+    },
+    {
+        id: 'collada',
+        label: 'COLLADA',
+        extension: 'dae',
+        description: 'The way into SketchUp and the older end of the toolchain.',
+        dimension: '3d',
+    },
+    {
+        id: 'ply',
+        label: 'PLY',
+        extension: 'ply',
+        description:
+            'Coloured triangle mesh for MeshLab, CloudCompare and scanning tools.',
+        dimension: '3d',
+    },
+    {
         id: 'dxf',
         label: 'DXF (plan)',
         extension: 'dxf',
@@ -93,8 +139,16 @@ export const EXPORT_FORMATS: ExportFormat[] = [
         dimension: '2d',
     },
     {
+        id: 'svg',
+        label: 'SVG (plan)',
+        extension: 'svg',
+        description:
+            'The plan as vector art for a report, a letter or Illustrator.',
+        dimension: '2d',
+    },
+    {
         id: 'json',
-        label: 'Axon model',
+        label: 'Vanhaven model',
         extension: 'json',
         description:
             'The whole document, for backup or moving between projects.',
@@ -184,14 +238,70 @@ export function buildExport(options: ExportOptions): ExportResult {
         );
     }
 
+    if (format.id === 'svg') {
+        const data = exportSvg(options.document, {
+            levelId: options.levelId,
+            name: options.name,
+        });
+
+        return single(
+            { filename: `${name}.svg`, mime: 'image/svg+xml', data },
+            0,
+            0,
+        );
+    }
+
     const solids = solidsForExport(options);
     const triangles = countStlTriangles(solids);
+
+    if (format.id === 'ifc') {
+        const data = exportIfc(solids, { name, timestamp: options.timestamp });
+
+        return single(
+            { filename: `${name}.ifc`, mime: 'application/x-step', data },
+            solids.length,
+            triangles,
+        );
+    }
 
     if (format.id === 'step') {
         const data = exportStep(solids, { name, timestamp: options.timestamp });
 
         return single(
             { filename: `${name}.step`, mime: 'application/step', data },
+            solids.length,
+            triangles,
+        );
+    }
+
+    if (format.id === 'gltf') {
+        const data = exportGltf(solids, { name, upAxis: options.upAxis });
+
+        return single(
+            { filename: `${name}.gltf`, mime: 'model/gltf+json', data },
+            solids.length,
+            triangles,
+        );
+    }
+
+    if (format.id === 'collada') {
+        const data = exportCollada(solids, {
+            name,
+            timestamp: options.timestamp,
+        });
+
+        return single(
+            { filename: `${name}.dae`, mime: 'model/vnd.collada+xml', data },
+            solids.length,
+            triangles,
+        );
+    }
+
+    if (format.id === 'ply') {
+        const data = exportPly(solids);
+
+        return single(
+            { filename: `${name}.ply`, mime: 'application/octet-stream', data },
             solids.length,
             triangles,
         );

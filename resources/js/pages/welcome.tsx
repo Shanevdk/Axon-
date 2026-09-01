@@ -11,13 +11,13 @@ import {
 } from 'lucide-react';
 import AppLogoIcon from '@/components/app-logo-icon';
 import { PaletteStrip } from '@/components/palette-picker';
-import { dashboard, login, register } from '@/routes';
+import { dashboard, login } from '@/routes';
 import { index as projects } from '@/routes/projects';
 
 /**
  * The front page.
  *
- * It has two jobs. To a visitor it is the only place Axon explains itself.
+ * It has two jobs. To a visitor it is the only place Vanhaven explains itself.
  * To someone who has just signed up it is a welcome mat — the sign-in that
  * created their account lands here, and every sign-in afterwards goes
  * straight to the studio, so this page is read once and then skipped.
@@ -97,10 +97,10 @@ function SiteHeader({ signedIn }: { signedIn: boolean }) {
                                     Log in
                                 </Link>
                                 <Link
-                                    href={register()}
+                                    href={login()}
                                     className="rounded-sm bg-ink px-4 py-2 text-paper transition-colors hover:bg-ink-soft"
                                 >
-                                    Create an account
+                                    Enter the studio
                                 </Link>
                             </>
                         )}
@@ -116,7 +116,7 @@ function SiteFooter() {
         <footer className="border-t border-border">
             <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-6 py-8 text-xs text-ink-muted">
                 <p>
-                    Axon — Vancouver, British Columbia. Built by{' '}
+                    Vanhaven — Vancouver, British Columbia. Built by{' '}
                     <a
                         href="https://vanhaven.ca"
                         className="underline underline-offset-4 transition-colors hover:text-ink"
@@ -172,7 +172,7 @@ function Pitch() {
 
                     <div className="mt-9 flex flex-wrap items-center gap-3">
                         <Link
-                            href={register()}
+                            href={login()}
                             className="group flex items-center gap-2 rounded-md bg-ember px-6 py-3 text-sm font-medium text-paper shadow-sm transition-all hover:shadow-md hover:brightness-110"
                         >
                             Start modelling
@@ -216,7 +216,7 @@ const FIRST_STEPS = [
     {
         step: '01',
         title: 'Start a drawing',
-        body: 'Name it, pick metric or imperial, and Axon opens on Level 1 with a wall type ready to go.',
+        body: 'Name it, pick metric or imperial, and Vanhaven opens on Level 1 with a wall type ready to go.',
     },
     {
         step: '02',
@@ -247,7 +247,7 @@ function WelcomeIn({ name }: { name: string }) {
                     </h1>
                     <p className="mt-6 max-w-xl text-base leading-relaxed text-ink-muted">
                         This page is the introduction, and you only get it once
-                        — from your next sign-in Axon opens straight into the
+                        — from your next sign-in Vanhaven opens straight into the
                         studio. Here is the shape of the thing.
                     </p>
 

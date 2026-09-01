@@ -37,7 +37,7 @@ class AskAboutTheBuilding
         TEXT;
 
     private const BRIEF = <<<'PROMPT'
-        You are the code consultant built into Axon, a browser-based
+        You are the code consultant built into Vanhaven, a browser-based
         architectural drafting and modelling application made by Van Haven. You
         are sitting with an architect at their drawing.
 

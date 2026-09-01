@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools;
 
+use App\Mcp\Tools\Concerns\ScopesToTheAsker;
 use App\Models\Project;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
@@ -18,9 +19,13 @@ use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 #[IsIdempotent]
 class ListProjectsTool extends Tool
 {
+    use ScopesToTheAsker;
+
     public function handle(Request $request): Response|ResponseFactory
     {
-        $projects = Project::query()
+        // The asker's studio and nobody else's. Unscoped, this tool hands a
+        // connector every drawing in the database on its first call.
+        $projects = $this->visibleProjects()
             ->latest('updated_at')
             ->get()
             ->map(fn (Project $project): array => [

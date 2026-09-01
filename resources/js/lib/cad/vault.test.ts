@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildPreview, summarise } from '@/lib/cad/preview';
+import { testDocument } from '@/lib/cad/__fixtures__/document';
+import { buildModelFaces } from '@/lib/cad/mesh';
+import {
+    buildClientModel,
+    buildPreview,
+    summarise,
+} from '@/lib/cad/preview';
 import type {
     CadDocument,
     FloorElement,
@@ -171,6 +177,94 @@ describe('what the server keeps', () => {
 
     it('has nothing to preview before anything is drawn', () => {
         expect(buildPreview(documentWith([]))).toBeNull();
+    });
+
+    it('keeps every level in the client model, not just the busiest', () => {
+        // The portal walks the whole house, so the one-level preview above is
+        // not enough to serve it.
+        const house = buildClientModel(
+            documentWith([
+                wall('a', 'level-1', 1000),
+                wall('b', 'level-2', 1000),
+                wall('c', 'level-2', 1000),
+            ]),
+        )!;
+
+        expect(house.levels).toHaveLength(2);
+        expect(house.elements).toHaveLength(3);
+    });
+
+    it('leaves the drafting out of the client model', () => {
+        const house = buildClientModel(
+            documentWith([
+                wall('a', 'level-1', 1000),
+                {
+                    id: 'd1',
+                    kind: 'dimension',
+                    level: 'level-1',
+                    a: { x: 0, y: 0 },
+                    b: { x: 1000, y: 0 },
+                    offset: 500,
+                } as never,
+                {
+                    id: 'g1',
+                    kind: 'grid',
+                    level: 'level-1',
+                    label: 'A',
+                    a: { x: 0, y: 0 },
+                    b: { x: 1000, y: 0 },
+                } as never,
+            ]),
+        )!;
+
+        expect(house.elements.map((element) => element.id)).toEqual(['a']);
+    });
+
+    it('leaves imported meshes out of the client model on size', () => {
+        const mesh: MeshElement = {
+            id: 'm1',
+            kind: 'mesh',
+            level: 'level-1',
+            name: 'Site scan',
+            p: { x: 0, y: 0 },
+            rotation: 0,
+            scale: 1,
+            baseOffset: 0,
+            vertices: Array.from({ length: 45_000 }, (_, i) => i),
+            footprint: [
+                { x: 0, y: 0 },
+                { x: 1000, y: 0 },
+                { x: 1000, y: 1000 },
+            ],
+            size: { x: 1000, y: 1000, z: 500 },
+        };
+
+        const house = buildClientModel(
+            documentWith([wall('a', 'level-1', 1000), mesh]),
+        )!;
+
+        expect(house.elements.map((element) => element.id)).toEqual(['a']);
+    });
+
+    it('has no house to send before anything is built', () => {
+        expect(buildClientModel(documentWith([]))).toBeNull();
+    });
+
+    it('still builds into solids after the drafting is stripped out', () => {
+        // The portal draws the client model through the same solid builder
+        // the editor uses. Dropping an element kind it depends on would leave
+        // the client staring at an empty screen, which no assertion about
+        // element counts would catch.
+        const house = buildClientModel(testDocument())!;
+        const faces = buildModelFaces(house);
+
+        expect(faces.length).toBeGreaterThan(0);
+
+        const coordinates = faces.flatMap((face) =>
+            face.vertices.flatMap((vertex) => [vertex.x, vertex.y, vertex.z]),
+        );
+
+        expect(coordinates.every(Number.isFinite)).toBe(true);
     });
 
     it('counts the whole model, not the previewed level', () => {

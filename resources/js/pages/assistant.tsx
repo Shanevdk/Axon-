@@ -105,7 +105,7 @@ export default function Assistant({ configured }: AssistantPageProps) {
 
             <div className="flex h-full flex-1 flex-col gap-6 p-6">
                 <header className="border-b border-border pb-5">
-                    <p className="ax-eyebrow text-muted-foreground">Axon</p>
+                    <p className="ax-eyebrow text-muted-foreground">Vanhaven</p>
                     <h1 className="mt-2 text-2xl font-light tracking-tight">
                         Assistant
                     </h1>

@@ -8,7 +8,7 @@ export default function AppLogo() {
             </div>
             <div className="ml-1 grid flex-1 text-left leading-none">
                 <span className="truncate text-sm font-semibold tracking-[0.2em]">
-                    AXON
+                    VANHAVEN
                 </span>
                 <span className="ax-eyebrow mt-1.5 text-[0.6rem] text-sand">
                     Design Software

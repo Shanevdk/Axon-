@@ -17,6 +17,10 @@ createInertiaApp({
             // The modelling environment owns the whole window.
             case name === 'projects/editor':
                 return null;
+            // Clients are not signed-in users, so the studio chrome — sidebar,
+            // account menu, presence — has nothing to show them.
+            case name.startsWith('portal/'):
+                return null;
             case name.startsWith('auth/'):
                 return AuthLayout;
             case name.startsWith('settings/'):

@@ -29,8 +29,9 @@ export function WarningsDialog({
     onOpenChange,
 }: WarningsDialogProps) {
     const warnings = useMemo(
-        () => (open ? reviewDocument(editor.document) : []),
-        [editor.document, open],
+        () =>
+            open ? reviewDocument(editor.document, editor.jurisdiction) : [],
+        [editor.document, editor.jurisdiction, open],
     );
 
     return (

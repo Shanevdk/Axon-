@@ -278,9 +278,9 @@ class StepWriter {
             'HEADER;',
             `FILE_DESCRIPTION(('${escape(name)}'),'2;1');`,
             `FILE_NAME('${escape(name)}','${timestamp}',('${escape(
-                options.author ?? 'Axon',
-            )}'),('${escape(options.organisation ?? 'Axon')}'),` +
-                `'Axon','Axon','');`,
+                options.author ?? 'Vanhaven',
+            )}'),('${escape(options.organisation ?? 'Vanhaven')}'),` +
+                `'Vanhaven','Vanhaven','');`,
             `FILE_SCHEMA(('AUTOMOTIVE_DESIGN { 1 0 10303 214 3 1 1 }'));`,
             'ENDSEC;',
             'DATA;',

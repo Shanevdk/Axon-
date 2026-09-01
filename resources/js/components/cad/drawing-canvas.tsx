@@ -28,6 +28,7 @@ import {
     createId,
     doorTypeOf,
     elementCategory,
+    elementDisplayName,
     FIXTURE_PRESETS,
     fixtureFootprint,
     hitTest,
@@ -53,6 +54,7 @@ import {
     draw3d,
     fitCamera,
     pickAt,
+    resolvePick,
     tourLength,
     tourPose,
     walkOrbit,
@@ -67,6 +69,8 @@ import {
     worldToScreen,
 } from '@/lib/cad/render-plan';
 import type { PlanOverlay, Viewport } from '@/lib/cad/render-plan';
+import { drawSite } from '@/lib/cad/render-site';
+import type { SiteScene } from '@/lib/cad/render-site';
 import { pointAtDistance, resolveSnap, snapAngle } from '@/lib/cad/snapping';
 import type { SnapSettings } from '@/lib/cad/snapping';
 import type {
@@ -87,6 +91,13 @@ import {
 
 /** Zoom applied per wheel tick — kept gentle so scrolling stays controllable. */
 const WHEEL_ZOOM_STEP = 1.07;
+
+/**
+ * How far the pointer may travel and still count as a click rather than a
+ * drag. A press in the 3D view starts an orbit before anyone knows which was
+ * meant, so this is what tells a pick from a turn of the model.
+ */
+const CLICK_SLOP = 4;
 
 /** Screen radius within which a flip arrow is picked. */
 const FLIP_PICK_RADIUS = 13;
@@ -157,7 +168,13 @@ type Drag =
     | { kind: 'look'; screen: Point; yaw: number; pitch: number }
     | { kind: 'marquee'; start: Point; current: Point }
     | { kind: 'moveSelection'; start: Point; current: Point; moved: boolean }
-    | { kind: 'grip'; grip: Grip; current: Point };
+    | { kind: 'grip'; grip: Grip; current: Point }
+    /**
+     * Siting the building. Both the ground it started on and the camera that
+     * was looking at it are remembered, because the two move together — see
+     * `siteTo` for why that is what makes the house appear to move.
+     */
+    | { kind: 'siteMove'; screen: Point; origin: Point; center: Point };
 
 type DrawingCanvasProps = {
     editor: CadEditor;
@@ -173,6 +190,12 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
     const [snap, setSnap] = useState<SnapResult | null>(null);
     const [pending, setPending] = useState<Pending>({ kind: 'none' });
     const [drag, setDrag] = useState<Drag>(null);
+    /**
+     * Where the ground has been slid to mid-drag, before it is committed.
+     * Held here rather than in the document so siting a house is one entry in
+     * the undo history rather than one per mouse movement.
+     */
+    const [sitingOrigin, setSitingOrigin] = useState<Point | null>(null);
     const [textDraft, setTextDraft] = useState<{
         world: Point;
         screen: Point;
@@ -213,6 +236,11 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
     } = editor;
     const isModelView =
         activeView.kind === 'threeD' || activeView.kind === 'elevation';
+    /**
+     * The site plan is drawn in plan space but holds no tools: the only thing
+     * to do in it is slide the building across the ground.
+     */
+    const isSiteView = activeView.kind === 'site';
     /** First person only makes sense inside the perspective 3D view. */
     const walking = editor.walkMode && activeView.kind === 'threeD';
     /** Keys held down while walking, drained by the movement loop. */
@@ -373,9 +401,16 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
                     visualStyle: settings.visualStyle,
                     selection: new Set(editor.selection),
                     hovered: editor.hovered,
+                    naturalMaterials: settings.naturalMaterials,
                 },
                 editor.viewport,
             );
+
+            return;
+        }
+
+        if (isSiteView) {
+            drawSite(ctx, siteScene(), viewport);
 
             return;
         }
@@ -401,6 +436,61 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
             buildOverlay(),
         );
     });
+
+    /**
+     * The site plan as it stands right now, ground included.
+     *
+     * Mid-drag the terrain is taken from `sitingOrigin` rather than the
+     * document, so the ground slides under the house at pointer speed without
+     * writing an undo entry for every pixel.
+     */
+    function siteScene(): SiteScene {
+        const stored = model.site ?? null;
+        const terrain = stored?.terrain ?? null;
+
+        return {
+            site:
+                stored && terrain && sitingOrigin
+                    ? {
+                          ...stored,
+                          terrain: {
+                              ...terrain,
+                              originX: sitingOrigin.x,
+                              originY: sitingOrigin.y,
+                          },
+                      }
+                    : stored,
+            footprint: [...geometry.values()].map((wall) => wall.polygon),
+            propertyLines: model.elements
+                .filter((element) => element.kind === 'propertyLine')
+                .map((element) => element.points),
+            units: model.units,
+            siting: drag?.kind === 'siteMove',
+        };
+    }
+
+    /**
+     * Where the ground and the camera land while the building is dragged.
+     *
+     * The model never moves — walls do not shuffle because somebody dropped a
+     * pin on a map — so the terrain slides the other way instead. On its own
+     * that would look like the ground moving and the house standing still, so
+     * the camera is panned by exactly the same amount: the two cancel, the
+     * ground stays put on screen, and the house travels under the cursor.
+     */
+    function siteTo(
+        event: React.PointerEvent<HTMLCanvasElement>,
+        from: Extract<Drag, { kind: 'siteMove' }>,
+    ): { origin: Point; center: Point } {
+        const screen = localPoint(event);
+        const dx = (screen.x - from.screen.x) / camera.zoom;
+        const dy = -(screen.y - from.screen.y) / camera.zoom;
+
+        return {
+            origin: { x: from.origin.x - dx, y: from.origin.y - dy },
+            center: { x: from.center.x - dx, y: from.center.y - dy },
+        };
+    }
 
     function buildOverlay(): PlanOverlay {
         const overlay: PlanOverlay = {
@@ -574,6 +664,34 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
     ) => {
         setShiftHeld(event.shiftKey);
 
+        if (isSiteView) {
+            if (drag?.kind === 'siteMove') {
+                const moved = siteTo(event, drag);
+
+                setSitingOrigin(moved.origin);
+                editor.setCamera((current) => ({
+                    ...current,
+                    center: moved.center,
+                }));
+            } else if (drag?.kind === 'pan') {
+                const local = localPoint(event);
+
+                editor.setCamera((current) => ({
+                    ...current,
+                    center: {
+                        x:
+                            drag.center.x -
+                            (local.x - drag.screen.x) / current.zoom,
+                        y:
+                            drag.center.y +
+                            (local.y - drag.screen.y) / current.zoom,
+                    },
+                }));
+            }
+
+            return;
+        }
+
         if (isModelView) {
             handleModelPointerMove(event);
 
@@ -697,6 +815,31 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
         event.currentTarget.focus();
 
         if (event.button === 2) {
+            return;
+        }
+
+        if (isSiteView) {
+            const terrain = model.site?.terrain;
+
+            // Middle button pans, as everywhere else. Without ground there is
+            // nothing to site the house against, so dragging only pans too.
+            if (event.button === 1 || !terrain) {
+                setDrag({
+                    kind: 'pan',
+                    screen: localPoint(event),
+                    center: camera.center,
+                });
+
+                return;
+            }
+
+            setDrag({
+                kind: 'siteMove',
+                screen: localPoint(event),
+                origin: { x: terrain.originX, y: terrain.originY },
+                center: camera.center,
+            });
+
             return;
         }
 
@@ -905,6 +1048,61 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
             return;
         }
 
+        // In a model view a press always starts an orbit, because there is no
+        // telling yet whether the hand is going to turn the model or pick
+        // something in it. How far the pointer travelled tells them apart:
+        // anything under the slop was a click, and a click is a pick.
+        if (
+            drag &&
+            (drag.kind === 'orbit' ||
+                drag.kind === 'orbitPan' ||
+                drag.kind === 'look')
+        ) {
+            const travelled = distance(localPoint(event), drag.screen);
+
+            setDrag(null);
+
+            if (travelled <= CLICK_SLOP) {
+                pickInModel(event);
+            }
+
+            return;
+        }
+
+        // Siting is committed once, on release, so the whole drag is a single
+        // step to undo rather than one per mouse movement.
+        if (drag?.kind === 'siteMove') {
+            const landed = siteTo(event, drag);
+
+            setDrag(null);
+            setSitingOrigin(null);
+
+            if (
+                landed.origin.x !== drag.origin.x ||
+                landed.origin.y !== drag.origin.y
+            ) {
+                commit('Site the building', (current) =>
+                    current.site?.terrain
+                        ? {
+                              ...current,
+                              site: {
+                                  ...current.site,
+                                  terrain: {
+                                      ...current.site.terrain,
+                                      originX: landed.origin.x,
+                                      originY: landed.origin.y,
+                                  },
+                              },
+                          }
+                        : current,
+                );
+
+                setStatus('Building sited');
+            }
+
+            return;
+        }
+
         if (drag) {
             setDrag(null);
 
@@ -912,9 +1110,12 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
         }
 
         if (isModelView) {
-            const hit = pickAt(pickTargets.current, localPoint(event));
-            editor.setSelection(hit ? [hit] : []);
+            pickInModel(event);
 
+            return;
+        }
+
+        if (isSiteView) {
             return;
         }
 
@@ -922,6 +1123,35 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
             handleToolClick(resolve(event).point);
         }
     };
+
+    /**
+     * Pick whatever is under the cursor in the 3D or elevation view.
+     *
+     * The same modifiers the plan view uses: Ctrl adds to the selection and
+     * Shift takes away, and clicking past the building clears it. Picking
+     * reads the depth-sorted targets the renderer already produced, so what
+     * is selected is exactly the surface that was drawn on top.
+     */
+    function pickInModel(event: React.PointerEvent<HTMLCanvasElement>) {
+        const hit = pickAt(pickTargets.current, localPoint(event));
+
+        editor.setSelection(
+            resolvePick(editor.selection, hit, {
+                adding: event.ctrlKey || event.metaKey,
+                removing: event.shiftKey,
+            }),
+        );
+
+        const element = hit
+            ? model.elements.find((item) => item.id === hit)
+            : undefined;
+
+        if (element) {
+            editor.setStatus(
+                `${elementCategory(element.kind)} — ${elementDisplayName(model, element)}`,
+            );
+        }
+    }
 
     function handleToolClick(worldPoint: Point) {
         const tool = editor.tool;
@@ -2498,6 +2728,50 @@ export function DrawingCanvas({ editor, onCursorChange }: DrawingCanvasProps) {
                     }
                 />
             )}
+
+            {isModelView && !walking && editor.explodedParts && (
+                <div className="pointer-events-none absolute top-3 left-3 max-w-64 rounded-sm border border-chrome-border bg-chrome-raised/95 p-3 text-chrome-fg">
+                    <p className="ax-eyebrow text-[0.58rem] text-chrome-muted">
+                        Made of
+                    </p>
+                    <p className="mt-1 truncate text-[0.78rem] font-medium">
+                        {editor.explodedParts.name}
+                    </p>
+                    <ol className="mt-2 space-y-1">
+                        {editor.explodedParts.layers.map((layer, index) => (
+                            <li
+                                key={`${layer.name}-${index}`}
+                                className="flex items-baseline justify-between gap-3 text-[0.7rem]"
+                            >
+                                <span className="truncate text-chrome-fg">
+                                    {layer.name}
+                                </span>
+                                <span className="shrink-0 text-chrome-muted tabular-nums">
+                                    {formatLength(layer.thickness, model.units)}
+                                </span>
+                            </li>
+                        ))}
+                    </ol>
+                    <p className="mt-2 border-t border-chrome-border pt-1.5 text-[0.62rem] text-chrome-muted">
+                        Outside face first ·{' '}
+                        {formatLength(
+                            editor.explodedParts.thickness,
+                            model.units,
+                        )}{' '}
+                        overall
+                    </p>
+                </div>
+            )}
+
+            {isModelView &&
+                !walking &&
+                editor.explodeFactor > 0 &&
+                !editor.explodedParts && (
+                    <div className="pointer-events-none absolute top-3 left-3 rounded-sm border border-chrome-border bg-chrome-raised/95 px-3 py-2 text-[0.7rem] text-chrome-muted">
+                        Whole model exploded — select one element to take that
+                        apart into its layers.
+                    </div>
+                )}
 
             {walking && (
                 <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-sm bg-ink/85 px-3 py-1.5 text-[0.72rem] tracking-wide text-paper">

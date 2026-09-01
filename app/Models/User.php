@@ -10,12 +10,15 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
 use Laravel\Fortify\Contracts\PasskeyUser;
 use Laravel\Fortify\PasskeyAuthenticatable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
+use Laravel\Passport\Contracts\OAuthenticatable;
+use Laravel\Passport\HasApiTokens;
 
 /**
  * @property int $id
@@ -37,10 +40,10 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  */
 #[Fillable(['name', 'email', 'password'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
-class User extends Authenticatable implements PasskeyUser
+class User extends Authenticatable implements OAuthenticatable, PasskeyUser
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
+    use HasApiTokens, HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
 
     /**
      * Statuses a member can pin on themselves. `meeting` is never among them:
@@ -121,9 +124,22 @@ class User extends Authenticatable implements PasskeyUser
     }
 
     /**
+     * This user's Claude sign-in, if they have connected one.
+     *
+     * Nothing that drives the Claude Code CLI runs without it: a turn spends
+     * a subscription, so it spends the subscription of whoever asked for it.
+     *
+     * @return HasOne<ClaudeAccount, $this>
+     */
+    public function claudeAccount(): HasOne
+    {
+        return $this->hasOne(ClaudeAccount::class);
+    }
+
+    /**
      * Mark that this user has arrived, saying whether it was their first time.
      *
-     * The answer decides where they land: the front page introduces Axon on
+     * The answer decides where they land: the front page introduces Vanhaven on
      * the first sign-in, and every one after that goes straight to work.
      * Saved quietly so arriving does not look like account activity.
      */

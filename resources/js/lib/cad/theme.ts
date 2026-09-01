@@ -2,7 +2,7 @@
  * Canvas colours.
  *
  * The 2D views are drawn as ink on warm paper and the 3D views are lit with a
- * sand key light, so the drawing area sits inside the Axon palette rather
+ * sand key light, so the drawing area sits inside the Vanhaven palette rather
  * than the default CAD grey.
  */
 export const CAD_THEME = {
@@ -88,3 +88,55 @@ export const MODEL_MATERIALS = {
 export const LIGHT_DIRECTION = { x: -0.42, y: -0.58, z: 0.7 };
 
 export const AMBIENT_LIGHT = 0.42;
+
+/**
+ * What the materials actually look like.
+ *
+ * `MODEL_MATERIALS` above is the drawing palette — everything tinted into the
+ * studio's own colours so a model reads as a drawing. This is the other view:
+ * timber the colour of timber, concrete the colour of concrete. Switched by
+ * the `naturalMaterials` view setting.
+ */
+export const NATURAL_MATERIALS: Record<string, string> = {
+    /** Softwood framing, planed and new. */
+    wood: '#c08e4e',
+    /** OSB, which is chip and glue and reads yellower than sawn timber. */
+    sheathing: '#c9a06a',
+    /** Paper-faced board, off-white. */
+    gypsum: '#efeae1',
+    /** Fibreglass batt, the pink everyone knows. */
+    insulation: '#e0a89c',
+    concrete: '#a9a8a4',
+    /** Clay brick. */
+    masonry: '#9c5a45',
+    steel: '#7d848a',
+    /** Galvanised duct and tray. */
+    metal: '#a8afb4',
+    glass: '#a6c8d8',
+    /** Asphalt shingle. */
+    shingle: '#4b4845',
+    earth: '#7a6a52',
+    foliage: '#6f8b5c',
+    generic: '#b3a48f',
+};
+
+/**
+ * How a material's surface is marked up close: timber gets its grain, brick
+ * and block get their courses, and everything else is drawn flat because it
+ * is flat.
+ */
+export const MATERIAL_GRAIN: Record<string, 'wood' | 'masonry' | null> = {
+    wood: 'wood',
+    sheathing: 'wood',
+    masonry: 'masonry',
+    gypsum: null,
+    insulation: null,
+    concrete: null,
+    steel: null,
+    metal: null,
+    glass: null,
+    shingle: null,
+    earth: null,
+    foliage: null,
+    generic: null,
+};

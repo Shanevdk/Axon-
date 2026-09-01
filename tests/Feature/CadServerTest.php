@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\Assistant\ModelBench;
 use App\Mcp\Servers\CadServer;
 use App\Mcp\Tools\AddLevelTool;
 use App\Mcp\Tools\CreateWallsTool;
@@ -224,4 +225,37 @@ test('claude is told when it is looking at a preview rather than the model', fun
     CadServer::tool(GetDocumentTool::class, ['project_id' => $project->id])
         ->assertOk()
         ->assertSee('preview of one level');
+});
+
+test('a drawing lent by the sidebar can be edited even though it lives on a machine', function () {
+    $project = Project::factory()->create();
+    $project->forceFill(['has_local_model' => true])->save();
+    $stored = $project->document;
+
+    // The editor handed the whole live model over for the length of a turn,
+    // so there is nothing to lose by editing it — and the browser is waiting
+    // to take the result back.
+    $bench = app(ModelBench::class);
+    $bench->lend($project, $stored);
+
+    CadServer::tool(CreateWallsTool::class, [
+        'project_id' => $project->id,
+        'level' => 'level-1',
+        'walls' => [['a' => ['x' => 0, 'y' => 0], 'b' => ['x' => 6000, 'y' => 0]]],
+    ])->assertOk();
+
+    // The wall went to the bench, never to the stored preview.
+    expect($bench->borrowed($project->id)['elements'])->toHaveCount(1)
+        ->and($project->refresh()->document)->toEqual($stored);
+});
+
+test('claude is told a lent drawing is the live one, not a preview', function () {
+    $project = Project::factory()->withSampleResidence()->create();
+    $project->forceFill(['has_local_model' => true])->save();
+
+    app(ModelBench::class)->lend($project, $project->document);
+
+    CadServer::tool(GetDocumentTool::class, ['project_id' => $project->id])
+        ->assertOk()
+        ->assertSee('lent by the editor');
 });

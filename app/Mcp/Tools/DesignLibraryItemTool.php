@@ -4,6 +4,7 @@ namespace App\Mcp\Tools;
 
 use App\Actions\Library\CompileItemParts;
 use App\Actions\Library\DrawItemSnapshot;
+use App\Mcp\Tools\Concerns\ScopesToTheAsker;
 use App\Models\LibraryItem;
 use App\Models\User;
 use Laravel\Mcp\Request;
@@ -28,10 +29,12 @@ use Laravel\Mcp\Server\Tool;
     TEXT)]
 class DesignLibraryItemTool extends Tool
 {
+    use ScopesToTheAsker;
+
     public function handle(Request $request): Response|ResponseFactory
     {
         $validated = $request->validate([
-            'item_id' => ['nullable', 'integer', 'exists:library_items,id'],
+            'item_id' => ['nullable', 'integer'],
             'name' => ['required_without:item_id', 'string', 'max:120'],
             'category' => ['nullable', 'string', 'max:60'],
             ...CompileItemParts::partRules(),
@@ -41,8 +44,12 @@ class DesignLibraryItemTool extends Tool
         ]);
 
         $item = isset($validated['item_id'])
-            ? LibraryItem::query()->findOrFail($validated['item_id'])
+            ? $this->visibleLibraryItems()->find($validated['item_id'])
             : null;
+
+        if (isset($validated['item_id']) && $item === null) {
+            return $this->refuseUnknownItem();
+        }
 
         if ($item !== null && ! $item->isEditable()) {
             return Response::error(
@@ -79,10 +86,14 @@ class DesignLibraryItemTool extends Tool
         if ($item !== null) {
             $item->update($attributes);
         } else {
-            $owner = User::query()->orderBy('id')->first();
+            // Whoever is asking owns what they design. Falling back to the
+            // first account is only right for a hand-run local server, where
+            // there is nobody to ask; over a connector it would put one
+            // studio's couch on another studio's shelf.
+            $owner = $this->asker() ?? User::query()->orderBy('id')->first();
 
             if ($owner === null) {
-                return Response::error('No user account exists yet to own the item. Register in Axon first.');
+                return Response::error('No user account exists yet to own the item. Register in Vanhaven first.');
             }
 
             $item = $owner->libraryItems()->create($attributes);

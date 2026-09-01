@@ -2,7 +2,7 @@
 
 namespace App\Mcp\Tools;
 
-use App\Models\DesignBoard;
+use App\Mcp\Tools\Concerns\ScopesToTheAsker;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\ResponseFactory;
@@ -14,7 +14,7 @@ use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
 #[Name('get-design-board')]
 #[Description(<<<'TEXT'
-    Read the parts board somebody has open in Axon's item designer right now,
+    Read the parts board somebody has open in Vanhaven's item designer right now,
     along with anything they have typed to you from the browser terminal.
 
     Call this first when asked to work the design board, and again whenever
@@ -25,13 +25,15 @@ use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 #[IsIdempotent]
 class GetDesignBoardTool extends Tool
 {
+    use ScopesToTheAsker;
+
     public function handle(Request $request): Response|ResponseFactory
     {
-        $board = DesignBoard::query()->latest('opened_at')->first();
+        $board = $this->visibleDesignBoards()->latest('opened_at')->first();
 
         if ($board === null) {
             return Response::error(
-                'No design board is open. Ask the person to open the item designer in Axon (Library → Design an item) and run `claude` in its terminal.'
+                'No design board is open. Ask the person to open the item designer in Vanhaven (Library → Design an item) and run `claude` in its terminal.'
             );
         }
 

@@ -20,6 +20,8 @@ export type WallType = {
     name: string;
     thickness: number;
     function: 'exterior' | 'interior' | 'curtain';
+    /** What walls of this type are built of. Absent means inferred. */
+    construction?: Construction;
 };
 
 export type DoorType = {
@@ -37,6 +39,40 @@ export type WindowType = {
     height: number;
     sillHeight: number;
 };
+
+/**
+ * What a thing is built of. This is what the bill of materials counts from:
+ * a wood wall is taken off in studs, plates and sheets, a concrete one in
+ * cubic metres of pour and kilos of rebar.
+ *
+ * Absent everywhere it is optional — `constructionOf()` in model.ts infers
+ * it from the element instead, so a drawing made before materials existed
+ * still produces a sensible takeoff.
+ */
+export type Construction = 'wood' | 'steel' | 'concrete' | 'masonry' | 'glazed';
+
+/**
+ * What a surface actually is, for drawing it in its own colour.
+ *
+ * This is not the same question as `Construction`, which says what an
+ * element is built of. A framed wall is `wood` construction but its faces
+ * are sheathing, gypsum and cladding — three materials on one wall — so the
+ * material belongs to the surface being drawn, not to the element.
+ */
+export type Material =
+    | 'wood'
+    | 'sheathing'
+    | 'gypsum'
+    | 'insulation'
+    | 'concrete'
+    | 'masonry'
+    | 'steel'
+    | 'metal'
+    | 'glass'
+    | 'shingle'
+    | 'earth'
+    | 'foliage'
+    | 'generic';
 
 export type LocationLine = 'center' | 'left' | 'right';
 
@@ -75,6 +111,11 @@ type BaseElement = {
     mark?: string;
     /** Free-text comments carried on the element. */
     comment?: string;
+    /**
+     * What this one is built of, overriding whatever its type or kind
+     * would imply. Absent is the normal case.
+     */
+    construction?: Construction;
 };
 
 export type WallElement = BaseElement & {
@@ -424,6 +465,51 @@ export type ElementKind = CadElement['kind'];
 
 export type OpeningElement = DoorElement | WindowElement;
 
+/**
+ * The lie of the land, sampled on a regular grid.
+ *
+ * Heights are millimetres above the project datum — the same z the model is
+ * built in — so a sample of 0 is exactly the height of the ground floor at
+ * elevation 0. `Site.seaLevel` remembers what that datum was in the real
+ * world, which is the only place metres above sea level appear.
+ */
+export type Terrain = {
+    /** Model coordinates of the first sample, its south-west corner. */
+    originX: number;
+    originY: number;
+    /** Distance between neighbouring samples, in millimetres. */
+    spacing: number;
+    columns: number;
+    rows: number;
+    /**
+     * One height per sample, row-major from the origin: east along a row,
+     * then north to the next. Length is always `columns * rows`.
+     */
+    heights: number[];
+};
+
+/**
+ * The property the building stands on.
+ *
+ * Kept beside the elements rather than among them because there is only ever
+ * one, and because the terrain is a grid of numbers rather than something
+ * drawn — it is not selectable, hosts nothing and has no type.
+ */
+export type Site = {
+    /** Where on earth the middle of the sampled ground is. */
+    latitude: number;
+    longitude: number;
+    /**
+     * Metres above sea level that model z = 0 stands for. Ground levels
+     * arrive as heights above the sea and are stored relative to this, so
+     * the model never carries a number in the hundreds of metres.
+     */
+    seaLevel: number;
+    /** A note of where the levels came from, shown beside the drawing. */
+    source?: string;
+    terrain: Terrain | null;
+};
+
 export type CadDocument = {
     version: number;
     units: Units;
@@ -435,12 +521,14 @@ export type CadDocument = {
     viewTemplates?: ViewTemplate[];
     elements: CadElement[];
     viewSettings: Record<string, Partial<ViewSettings>>;
+    /** Optional so documents saved before the site existed still load. */
+    site?: Site | null;
 };
 
 export type ViewKind =
-    'plan' | 'ceiling' | 'elevation' | 'section' | 'threeD' | 'schedule';
+    'plan' | 'ceiling' | 'elevation' | 'section' | 'threeD' | 'schedule' | 'site';
 
-export type ScheduleKind = 'room' | 'door' | 'window' | 'wall';
+export type ScheduleKind = 'room' | 'door' | 'window' | 'wall' | 'materials';
 
 export type Orientation = 'north' | 'south' | 'east' | 'west';
 
@@ -480,6 +568,12 @@ export type ViewSettings = {
     showCrop: boolean;
     /** Cast shadows in the model views. */
     shadows: boolean;
+    /**
+     * Draw the model in the colours the materials actually are — timber
+     * brown with its grain, concrete grey, brick red — rather than in the
+     * drawing palette. Off is the architectural view; on is the real one.
+     */
+    naturalMaterials: boolean;
     /**
      * The crop rectangle in millimetres. Null until the view is first cropped,
      * at which point it is seeded from whatever the level contains.

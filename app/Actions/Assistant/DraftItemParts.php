@@ -3,6 +3,7 @@
 namespace App\Actions\Assistant;
 
 use App\Actions\Library\CompileItemParts;
+use App\Concerns\AllowsTimeToAnswer;
 use App\Models\AiConnection;
 use Illuminate\Http\Client\Response as HttpResponse;
 use Illuminate\Support\Facades\Http;
@@ -20,6 +21,8 @@ use RuntimeException;
  */
 class DraftItemParts
 {
+    use AllowsTimeToAnswer;
+
     /**
      * The brief every provider gets, whoever they are.
      */
@@ -125,7 +128,7 @@ class DraftItemParts
 
         return implode("\n\n", [
             <<<'PROMPT'
-            You are sitting at a terminal inside Axon's item designer, working
+            You are sitting at a terminal inside Vanhaven's item designer, working
             a parts board together with the person typing. Reply with ONLY one
             JSON object, no code fences:
 
@@ -152,7 +155,9 @@ class DraftItemParts
             'x-api-key' => $connection->key,
             'anthropic-version' => (string) config('services.anthropic.version'),
         ])
-            ->timeout((int) config('services.anthropic.timeout'))
+            ->timeout($this->allowSecondsToAnswer(
+                (int) config('services.anthropic.timeout'),
+            ))
             ->post(rtrim((string) config('services.anthropic.url'), '/').'/v1/messages', [
                 'model' => $connection->modelId(),
                 'max_tokens' => 8192,
@@ -170,7 +175,9 @@ class DraftItemParts
     private function askOpenAi(AiConnection $connection, string $system, array $messages): string
     {
         $response = Http::withToken($connection->key)
-            ->timeout((int) config('services.openai.timeout'))
+            ->timeout($this->allowSecondsToAnswer(
+                (int) config('services.openai.timeout'),
+            ))
             ->post(rtrim((string) config('services.openai.url'), '/').'/v1/chat/completions', [
                 'model' => $connection->modelId(),
                 'messages' => [['role' => 'system', 'content' => $system], ...$messages],
@@ -190,7 +197,9 @@ class DraftItemParts
                 'HTTP-Referer' => config('app.url'),
                 'X-Title' => config('app.name'),
             ])
-            ->timeout((int) config('services.openrouter.timeout'))
+            ->timeout($this->allowSecondsToAnswer(
+                (int) config('services.openrouter.timeout'),
+            ))
             ->post(rtrim((string) config('services.openrouter.url'), '/').'/chat/completions', [
                 'model' => $connection->modelId(),
                 'messages' => [['role' => 'system', 'content' => $system], ...$messages],

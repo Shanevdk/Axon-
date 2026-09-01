@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useCadDocument } from '@/hooks/use-cad-document';
 import { purgeUnusedTypes } from '@/lib/cad/checkup';
 import { cleanUpDocument } from '@/lib/cad/cleanup';
+import { bringWallsUpToCode, requirementFor } from '@/lib/cad/code';
 import { extractTypeLibrary } from '@/lib/cad/exchange/insert';
+import { focusedAssembly } from '@/lib/cad/explode';
 import { boundsOf, boundsCenter, expandBounds } from '@/lib/cad/geometry';
 import type { Bounds } from '@/lib/cad/geometry';
-import { buildModelFaces, groundFace } from '@/lib/cad/mesh';
+import { buildModelFaces, groundFaces } from '@/lib/cad/mesh';
 import {
     buildWallGeometry,
     createId,
@@ -16,13 +18,14 @@ import {
     withPinned,
 } from '@/lib/cad/model';
 import type { WallGeometry } from '@/lib/cad/model';
-import { buildPreview, summarise } from '@/lib/cad/preview';
+import { buildClientModel, buildPreview, summarise } from '@/lib/cad/preview';
 import { fitCamera } from '@/lib/cad/render-3d';
 import type { CommandId, ToggleId } from '@/lib/cad/ribbon';
 import { computeRoomBoundaries } from '@/lib/cad/rooms';
 import type { RoomBoundary } from '@/lib/cad/rooms';
 import { DEFAULT_SNAP_SETTINGS } from '@/lib/cad/snapping';
 import type { SnapSettings } from '@/lib/cad/snapping';
+import { terrainBounds } from '@/lib/cad/terrain';
 import type {
     CadDocument,
     CadView,
@@ -50,6 +53,7 @@ import {
     isDrawingView,
     levelFor,
     settingsFor,
+    withNaturalMaterials,
 } from '@/lib/cad/views';
 
 /**
@@ -91,6 +95,12 @@ export function useCadEditor(
     initialDocument: CadDocument,
     saveUrl: string,
     storage: EditorStorage,
+    /**
+     * Where the building is, as the project records it. The energy code the
+     * walls answer to depends on it, so it travels with the editor rather
+     * than only with the code consultant.
+     */
+    jurisdiction: string | null = null,
 ) {
     const store = useCadDocument(initialDocument);
     const { document } = store;
@@ -139,6 +149,7 @@ export function useCadEditor(
         pitch: 0,
     });
     const [tourPlaying, setTourPlaying] = useState(false);
+    const [explodeFactor, setExplodeFactor] = useState(0);
     const [viewport, setViewportState] = useState({ width: 1200, height: 800 });
     const [status, setStatus] = useState('Ready');
     const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -150,6 +161,7 @@ export function useCadEditor(
     const [codeAssistantOpen, setCodeAssistantOpen] = useState(false);
     const [warningsOpen, setWarningsOpen] = useState(false);
     const [libraryOpen, setLibraryOpen] = useState(false);
+    const [groundOpen, setGroundOpen] = useState(false);
     const [hidden, setHidden] = useState<Set<string>>(() => new Set());
     const [revealHidden, setRevealHidden] = useState(false);
 
@@ -162,6 +174,12 @@ export function useCadEditor(
     const exportRequest = useRef(0);
     const [exportToken, setExportToken] = useState(0);
 
+    /** What the walls must achieve where this building is, or null. */
+    const codeRequirement = useMemo(
+        () => requirementFor(jurisdiction),
+        [jurisdiction],
+    );
+
     const views = useMemo(() => deriveViews(document), [document]);
     const activeView: CadView = useMemo(
         () => findView(views, activeViewId),
@@ -172,8 +190,8 @@ export function useCadEditor(
         [document, activeView],
     );
     const settings: ViewSettings = useMemo(
-        () => settingsFor(document, activeView.id),
-        [document, activeView.id],
+        () => settingsFor(document, activeView),
+        [document, activeView],
     );
     const groups = useMemo(() => browserGroups(views), [views]);
 
@@ -207,9 +225,28 @@ export function useCadEditor(
         ];
     }, [document, level.id, settings.underlay]);
 
+    /**
+     * The one element being taken apart, which is simply whatever is selected
+     * on its own. Selecting nothing explodes the whole building instead.
+     */
+    const explodeFocus = selection.length === 1 ? selection[0] : null;
+
     const faces = useMemo(
-        () => [groundFace(document), ...buildModelFaces(document)],
-        [document],
+        () => [
+            ...groundFaces(document),
+            ...buildModelFaces(document, {
+                factor: explodeFactor,
+                focus: explodeFocus,
+            }),
+        ],
+        [document, explodeFactor, explodeFocus],
+    );
+
+    /** The layers on show while one element is exploded, for the legend. */
+    const explodedParts = useMemo(
+        () =>
+            explodeFactor > 0 ? focusedAssembly(document, explodeFocus) : null,
+        [document, explodeFactor, explodeFocus],
     );
 
     /**
@@ -259,6 +296,25 @@ export function useCadEditor(
                     [activeViewId]: {
                         ...(current.viewSettings?.[activeViewId] ?? {}),
                         [key]: value,
+                    },
+                },
+            }));
+        },
+        [store, activeViewId],
+    );
+
+    /**
+     * Change several view settings together, as one entry in the history.
+     */
+    const setViewSettings = useCallback(
+        (values: Partial<ViewSettings>, label = 'Change view') => {
+            store.commit(label, (current) => ({
+                ...current,
+                viewSettings: {
+                    ...current.viewSettings,
+                    [activeViewId]: {
+                        ...(current.viewSettings?.[activeViewId] ?? {}),
+                        ...values,
                     },
                 },
             }));
@@ -327,7 +383,13 @@ export function useCadEditor(
             return;
         }
 
-        const bounds = levelBounds();
+        // On the site plan the subject is the property, not the house. Fitting
+        // to the building would fill the screen with a footprint and push the
+        // ground it is being sited on off the edges.
+        const bounds =
+            activeView.kind === 'site' && document.site?.terrain
+                ? terrainBounds(document.site.terrain)
+                : levelBounds();
 
         if (!bounds) {
             setCamera({ zoom: 0.03, center: { x: 0, y: 0 } });
@@ -342,7 +404,14 @@ export function useCadEditor(
         );
 
         setCamera({ zoom: zoom * 0.92, center: boundsCenter(padded) });
-    }, [activeView.kind, faces, levelBounds, setCamera, viewport]);
+    }, [
+        activeView.kind,
+        document.site,
+        faces,
+        levelBounds,
+        setCamera,
+        viewport,
+    ]);
 
     const setTool = useCallback((next: ToolId) => {
         setToolState(next);
@@ -585,6 +654,23 @@ export function useCadEditor(
                 return;
             }
 
+            if (setting === 'naturalMaterials') {
+                const on = !settings.naturalMaterials;
+                const next = withNaturalMaterials(settings, on);
+
+                setViewSettings(next, on ? 'Show materials' : 'Hide materials');
+
+                setStatus(
+                    on
+                        ? next.visualStyle
+                            ? 'Natural materials on — the view is now shaded so they show'
+                            : 'Natural materials on'
+                        : 'Natural materials off',
+                );
+
+                return;
+            }
+
             if (setting === 'walkMode') {
                 if (walkMode) {
                     exitWalkMode();
@@ -609,6 +695,7 @@ export function useCadEditor(
             exitWalkMode,
             openView,
             setViewSetting,
+            setViewSettings,
             settings,
             walkMode,
         ],
@@ -661,6 +748,9 @@ export function useCadEditor(
                 body: JSON.stringify({
                     document: preview,
                     summary: summarise(document),
+                    // The client portal walks every level, so it cannot be
+                    // served from the one-level preview above.
+                    client_model: buildClientModel(document),
                 }),
             });
 
@@ -774,6 +864,9 @@ export function useCadEditor(
                     );
                     break;
                 }
+                case 'groundLevels':
+                    setGroundOpen(true);
+                    break;
                 case 'reviewWarnings':
                     setWarningsOpen(true);
                     break;
@@ -817,6 +910,48 @@ export function useCadEditor(
                 case 'openSchedule':
                     openView('schedule:room');
                     break;
+                case 'openMaterials':
+                    openView('schedule:materials');
+                    break;
+                case 'wallsToCode': {
+                    if (!codeRequirement) {
+                        setStatus(
+                            'Set the project address first — the code depends on where the building is',
+                        );
+                        break;
+                    }
+
+                    const result = bringWallsUpToCode(
+                        document,
+                        codeRequirement,
+                    );
+
+                    // Concrete and masonry come back here rather than being
+                    // altered: thickening them changes the drawing without
+                    // changing the answer.
+                    const stuck =
+                        result.needsInsulation.length > 0
+                            ? ` ${result.needsInsulation.join(', ')} needs insulation, which is your call.`
+                            : '';
+
+                    if (result.upgraded.length === 0) {
+                        setStatus(
+                            stuck === ''
+                                ? `Exterior walls already meet ${codeRequirement.region}`
+                                : `Nothing to thicken.${stuck}`,
+                        );
+                        break;
+                    }
+
+                    store.commit(
+                        'Bring walls up to code',
+                        () => result.document,
+                    );
+                    setStatus(
+                        `Thickened ${result.upgraded.length} wall ${result.upgraded.length === 1 ? 'type' : 'types'} for ${codeRequirement.region}.${stuck}`,
+                    );
+                    break;
+                }
                 case 'playTour': {
                     const path = document.elements.find(
                         (element) =>
@@ -877,6 +1012,7 @@ export function useCadEditor(
         },
         [
             addLevel,
+            codeRequirement,
             deleteSelection,
             document,
             enterWalkMode,
@@ -943,6 +1079,12 @@ export function useCadEditor(
         walk,
         setWalk,
         tourPlaying,
+        jurisdiction,
+        codeRequirement,
+        explodeFactor,
+        setExplodeFactor,
+        explodeFocus,
+        explodedParts,
         setTourPlaying,
         enterWalkMode,
         exitWalkMode,
@@ -1017,6 +1159,8 @@ export function useCadEditor(
         setWarningsOpen,
         libraryOpen,
         setLibraryOpen,
+        groundOpen,
+        setGroundOpen,
         hidden,
         revealHidden,
         setRevealHidden,
@@ -1033,6 +1177,7 @@ export function useCadEditor(
         saveViewTemplate,
         applyViewTemplate,
         setViewSetting,
+        setViewSettings,
         applyToggle,
         runCommand,
         deleteSelection,

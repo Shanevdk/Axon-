@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools;
 
+use App\Mcp\Tools\Concerns\ScopesToTheAsker;
 use App\Models\LibraryItem;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
@@ -18,9 +19,11 @@ use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 #[IsIdempotent]
 class ListLibraryItemsTool extends Tool
 {
+    use ScopesToTheAsker;
+
     public function handle(Request $request): Response|ResponseFactory
     {
-        $items = LibraryItem::query()
+        $items = $this->visibleLibraryItems()
             ->orderBy('category')
             ->orderBy('name')
             ->get()

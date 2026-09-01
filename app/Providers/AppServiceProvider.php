@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
+use Laravel\Passport\Passport;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -24,6 +25,27 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+        $this->configureTheConnector();
+    }
+
+    /**
+     * Vanhaven as something Claude can be connected to.
+     *
+     * Adding the connector sends a person here to approve it. That screen is
+     * the only part of the OAuth flow they ever see, so it is the studio's
+     * own rather than a stock consent page — see resources/views/mcp.
+     *
+     * Tokens are deliberately short-lived and refreshable: a connector left
+     * on a machine somebody no longer has should stop working by itself.
+     */
+    protected function configureTheConnector(): void
+    {
+        Passport::authorizationView(
+            fn (array $parameters) => view('mcp.authorize', $parameters),
+        );
+
+        Passport::tokensExpireIn(now()->addDays(15));
+        Passport::refreshTokensExpireIn(now()->addDays(30));
     }
 
     /**

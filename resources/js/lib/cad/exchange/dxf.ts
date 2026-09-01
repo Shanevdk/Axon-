@@ -189,7 +189,7 @@ export function exportDxf(document: CadDocument, levelId: string): string {
 function prologue(): string[] {
     const lines = [
         '999',
-        'Axon',
+        'Vanhaven',
         '0',
         'SECTION',
         '2',

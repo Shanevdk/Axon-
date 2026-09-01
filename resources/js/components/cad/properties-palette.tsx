@@ -3,6 +3,8 @@ import { PanelHeading } from '@/components/cad/project-browser';
 import type { CadEditor } from '@/hooks/use-cad-editor';
 import { distance, polygonArea, polygonPerimeter } from '@/lib/cad/geometry';
 import {
+    CONSTRUCTION_LABELS,
+    constructionOf,
     DUCT_SYSTEM_LABELS,
     elementCategory,
     elementDisplayName,
@@ -19,6 +21,7 @@ import {
 } from '@/lib/cad/model';
 import type {
     CadElement,
+    Construction,
     DetailLevel,
     DuctSystem,
     ElementKind,
@@ -198,6 +201,25 @@ function ViewProperties({ editor }: { editor: CadEditor }) {
     );
 }
 
+/**
+ * The kinds a material means anything for. Annotation and datum are drawn
+ * rather than built, so they are never asked what they are made of.
+ */
+const BUILDABLE_KINDS: ElementKind[] = [
+    'wall',
+    'floor',
+    'ceiling',
+    'roof',
+    'column',
+    'beam',
+    'brace',
+    'footing',
+    'pad',
+    'stair',
+    'ramp',
+    'railing',
+];
+
 /** Categories offered in the per-view Visibility/Graphics list. */
 const VG_CATEGORIES: ElementKind[] = [
     'wall',
@@ -357,6 +379,42 @@ function ElementProperties({ editor, element }: ElementPropertiesProps) {
                     />
                 </Row>
             </Group>
+
+            {BUILDABLE_KINDS.includes(element.kind) && (
+                <Group title="Material">
+                    <Row label="Built Of">
+                        <Select
+                            value={element.construction ?? 'auto'}
+                            options={[
+                                { value: 'auto', label: 'Automatic' },
+                                ...(
+                                    Object.keys(
+                                        CONSTRUCTION_LABELS,
+                                    ) as Construction[]
+                                ).map((value) => ({
+                                    value,
+                                    label: CONSTRUCTION_LABELS[value],
+                                })),
+                            ]}
+                            onChange={(value) =>
+                                patch({
+                                    construction:
+                                        value === 'auto' ? undefined : value,
+                                })
+                            }
+                        />
+                    </Row>
+                    <Row label="Counted As">
+                        <ReadOnly
+                            value={
+                                CONSTRUCTION_LABELS[
+                                    constructionOf(document, element)
+                                ]
+                            }
+                        />
+                    </Row>
+                </Group>
+            )}
 
             {element.kind === 'wall' && (
                 <>

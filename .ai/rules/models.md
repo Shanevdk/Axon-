@@ -49,7 +49,7 @@ Presence on the chat page is resolved by `User::currentPresence()`: absence (no 
 Trap: the method was first called `presence()`, colliding with the `presence` column — on a model whose attribute isn't loaded (fresh `create()`), `$user->presence` resolves the METHOD as a relationship and 500s. Never give a method the same name as a column.
 
 ## The design board bridges Claude Code to the designer — subscription, not API
-`design_boards` is one live parts board per user, written from both sides: the browser publishes what is on screen, Claude Code reads and revises it over MCP (`get-design-board` / `set-design-board`). This is the only way a Claude subscription drives Axon — a Max/Pro plan cannot sign API calls, but Claude Code already runs on it, so the work happens there and nothing bills an API account.
+`design_boards` is one live parts board per user, written from both sides: the browser publishes what is on screen, Claude Code reads and revises it over MCP (`get-design-board` / `set-design-board`). This is the only way a Claude subscription drives Vanhaven — a Max/Pro plan cannot sign API calls, but Claude Code already runs on it, so the work happens there and nothing bills an API account.
 
 `revision` + `source` are the anti-echo: each side ignores revisions it caused. In the terminal that means an adopted board sets `adopting.current` so the publish effect skips one beat — remove that and the browser and Claude Code loop forever.
 

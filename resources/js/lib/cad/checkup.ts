@@ -7,6 +7,11 @@
  * run on every open of the dialog.
  */
 
+import {
+    checkWallTypes,
+    formatResistance,
+    requirementFor,
+} from '@/lib/cad/code';
 import { distance } from '@/lib/cad/geometry';
 import {
     doorTypeOf,
@@ -41,7 +46,10 @@ const WALL_WORTH_KEEPING = 10;
 /**
  * Read the model and report what a careful drafter would flag.
  */
-export function reviewDocument(document: CadDocument): ReviewWarning[] {
+export function reviewDocument(
+    document: CadDocument,
+    jurisdiction?: string | null,
+): ReviewWarning[] {
     const warnings: ReviewWarning[] = [
         ...orphanedOpenings(document),
         ...crowdedOpenings(document),
@@ -50,6 +58,7 @@ export function reviewDocument(document: CadDocument): ReviewWarning[] {
         ...missingTypes(document),
         ...duplicateRoomNumbers(document),
         ...duplicateMarks(document),
+        ...wallsBelowCode(document, jurisdiction),
     ];
 
     // Errors first, then a stable reading order within each severity.
@@ -65,8 +74,58 @@ export function reviewDocument(document: CadDocument): ReviewWarning[] {
 /**
  * How many warnings a document carries, for a badge.
  */
-export function reviewCount(document: CadDocument): number {
-    return reviewDocument(document).length;
+export function reviewCount(
+    document: CadDocument,
+    jurisdiction?: string | null,
+): number {
+    return reviewDocument(document, jurisdiction).length;
+}
+
+/**
+ * Exterior wall types that fall short of the energy code where the building
+ * is, when the project says where that is.
+ *
+ * This is a warning like every other one here: advisory, never a locked door.
+ * The estimate behind it is rough and the table behind it is small, so the
+ * message names the authority and the shortfall and lets the architect
+ * decide — which is the same posture the code consultant takes.
+ */
+function wallsBelowCode(
+    document: CadDocument,
+    jurisdiction?: string | null,
+): ReviewWarning[] {
+    const requirement = requirementFor(jurisdiction);
+
+    if (!requirement) {
+        return [];
+    }
+
+    const inUse = new Set(
+        document.elements
+            .filter((element) => element.kind === 'wall')
+            .map((element) => (element as WallElement).typeId),
+    );
+
+    return checkWallTypes(document, requirement)
+        .filter((check) => !check.passes && inUse.has(check.type.id))
+        .map((check) => ({
+            id: `code-${check.type.id}`,
+            severity: 'warning' as const,
+            message:
+                `${check.type.name} is about ${formatResistance(check.rsi, document.units)} effective; ` +
+                `${requirement.region} asks for ${formatResistance(check.requiredRsi, document.units)} ` +
+                `(${requirement.authority}, zone ${requirement.zone}). ` +
+                (check.fixableByThickening
+                    ? `About ${check.suggestedThickness}mm would do it.`
+                    : 'Thickening will not fix it — this one needs insulation added.'),
+            elementIds: document.elements
+                .filter(
+                    (element) =>
+                        element.kind === 'wall' &&
+                        (element as WallElement).typeId === check.type.id,
+                )
+                .map((element) => element.id),
+        }));
 }
 
 /**

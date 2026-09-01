@@ -1,8 +1,10 @@
 import { Head, Link } from '@inertiajs/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ClaudeDock } from '@/components/cad/claude-dock';
 import { CodeAssistantDialog } from '@/components/cad/code-assistant-dialog';
 import { DrawingCanvas } from '@/components/cad/drawing-canvas';
 import { ExportDialog } from '@/components/cad/export-dialog';
+import { GroundLevelsDialog } from '@/components/cad/ground-levels-dialog';
 import { ImportDialog } from '@/components/cad/import-dialog';
 import { LibraryDialog } from '@/components/cad/library-dialog';
 import { OptionsBar } from '@/components/cad/options-bar';
@@ -17,6 +19,7 @@ import { StatusBar } from '@/components/cad/status-bar';
 import { TitleBar } from '@/components/cad/title-bar';
 import { ViewControlBar } from '@/components/cad/view-control-bar';
 import { WarningsDialog } from '@/components/cad/warnings-dialog';
+import type { ClaudeState } from '@/components/claude-sign-in';
 import { useCadEditor } from '@/hooks/use-cad-editor';
 import type { EditorStorage } from '@/hooks/use-cad-editor';
 import { elementCategory } from '@/lib/cad/model';
@@ -35,6 +38,8 @@ type EditorProps = {
     hasLocalModel: boolean;
     /** False until there is an OpenRouter key for the code consultant. */
     assistantReady: boolean;
+    /** Whether the CLI is on this machine, and whether you have signed in. */
+    claude: ClaudeState;
 };
 
 type WorkbenchProps = {
@@ -42,6 +47,7 @@ type WorkbenchProps = {
     document: CadDocument;
     storage: EditorStorage;
     assistantReady: boolean;
+    claude: ClaudeState;
 };
 
 /**
@@ -57,6 +63,7 @@ export default function Editor({
     document,
     hasLocalModel,
     assistantReady,
+    claude,
 }: EditorProps) {
     const [found, setFound] = useState<Resolution>({ state: 'looking' });
 
@@ -112,6 +119,7 @@ export default function Editor({
             document={found.document}
             storage={found.storage}
             assistantReady={assistantReady}
+            claude={claude}
         />
     );
 }
@@ -126,11 +134,13 @@ function Workbench({
     document,
     storage,
     assistantReady,
+    claude,
 }: WorkbenchProps) {
     const editor = useCadEditor(
         document,
         updateDocument(project.id).url,
         storage,
+        project.jurisdiction,
     );
     const [pointer, setPointer] = useState<{
         cursor: Point | null;
@@ -139,6 +149,10 @@ function Workbench({
         cursor: null,
         snap: null,
     });
+
+    // Closed to begin with: the drawing is the point of the screen, and the
+    // dock leaves a tab behind so it is one click back.
+    const [claudeOpen, setClaudeOpen] = useState(false);
 
     const onCursorChange = useCallback(
         (cursor: Point | null, snap: SnapResult | null) =>
@@ -322,6 +336,14 @@ function Workbench({
                         <ViewControlBar editor={editor} />
                     )}
                 </main>
+
+                <ClaudeDock
+                    editor={editor}
+                    projectId={project.id}
+                    claude={claude}
+                    open={claudeOpen}
+                    onOpenChange={setClaudeOpen}
+                />
             </div>
 
             <StatusBar
@@ -376,6 +398,17 @@ function Workbench({
                 editor={editor}
                 open={editor.libraryOpen}
                 onOpenChange={editor.setLibraryOpen}
+            />
+
+            <GroundLevelsDialog
+                editor={editor}
+                projectId={project.id}
+                place={{
+                    latitude: project.latitude,
+                    longitude: project.longitude,
+                }}
+                open={editor.groundOpen}
+                onOpenChange={editor.setGroundOpen}
             />
         </div>
     );

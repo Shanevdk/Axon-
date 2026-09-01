@@ -1,5 +1,7 @@
 import { Form } from '@inertiajs/react';
 import { useState } from 'react';
+import { SitePicker } from '@/components/site-picker';
+import type { SiteSelection } from '@/components/site-picker';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -26,6 +28,13 @@ export function NewProjectDialog({
     const [template, setTemplate] = useState<'residence' | 'blank'>(
         'residence',
     );
+
+    const [site, setSite] = useState<SiteSelection>({
+        address: '',
+        latitude: null,
+        longitude: null,
+        region: null,
+    });
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -100,9 +109,26 @@ export function NewProjectDialog({
                                 </Field>
                             </div>
 
-                            <Field label="Site address" error={errors.address}>
-                                <Input name="address" defaultValue="" />
-                            </Field>
+                            <SitePicker
+                                value={site}
+                                onChange={setSite}
+                                error={
+                                    errors.address ??
+                                    errors.latitude ??
+                                    errors.longitude
+                                }
+                            />
+
+                            {/*
+                              * Picking a place also settles which code the
+                              * walls answer to, which is otherwise typed by
+                              * hand in Project Information.
+                              */}
+                            <input
+                                type="hidden"
+                                name="jurisdiction"
+                                value={site.region ?? ''}
+                            />
 
                             <DialogFooter>
                                 <Button

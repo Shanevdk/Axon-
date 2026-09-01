@@ -3,7 +3,7 @@
 namespace App\Mcp\Tools;
 
 use App\Actions\Library\CompileItemParts;
-use App\Models\DesignBoard;
+use App\Mcp\Tools\Concerns\ScopesToTheAsker;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\ResponseFactory;
@@ -13,7 +13,7 @@ use Laravel\Mcp\Server\Tool;
 
 #[Name('set-design-board')]
 #[Description(<<<'TEXT'
-    Put a revised parts board in front of the person using Axon's item
+    Put a revised parts board in front of the person using Vanhaven's item
     designer. What you send replaces the whole board and appears in their
     preview within a couple of seconds — say what you changed in `note` and
     it prints in their terminal.
@@ -26,6 +26,8 @@ use Laravel\Mcp\Server\Tool;
     TEXT)]
 class SetDesignBoardTool extends Tool
 {
+    use ScopesToTheAsker;
+
     public function handle(Request $request): Response|ResponseFactory
     {
         $validated = $request->validate([
@@ -38,11 +40,11 @@ class SetDesignBoardTool extends Tool
             'parts.*.points.required_if' => 'A sketch part needs points: a closed plan outline of at least three corners.',
         ]);
 
-        $board = DesignBoard::query()->latest('opened_at')->first();
+        $board = $this->visibleDesignBoards()->latest('opened_at')->first();
 
         if ($board === null) {
             return Response::error(
-                'No design board is open. Ask the person to open the item designer in Axon and run `claude` in its terminal.'
+                'No design board is open. Ask the person to open the item designer in Vanhaven and run `claude` in its terminal.'
             );
         }
 

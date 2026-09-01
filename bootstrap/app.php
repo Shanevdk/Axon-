@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Middleware\EnsureClientSignedIn;
+use App\Http\Middleware\EnsureWorkEmail;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\RecordPresence;
@@ -25,12 +27,19 @@ return Application::configure(basePath: dirname(__DIR__))
         // The balancer's addresses are not fixed, hence the wildcard.
         $middleware->trustProxies(at: '*');
 
-        $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
+        $middleware->encryptCookies(except: ['appearance', 'palette', 'sidebar_state']);
+
+        $middleware->alias([
+            'portal' => EnsureClientSignedIn::class,
+        ]);
 
         $middleware->web(append: [
             HandleAppearance::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
+            // Ahead of presence, so an account that may not be here is turned
+            // away before it is recorded as present.
+            EnsureWorkEmail::class,
             RecordPresence::class,
         ]);
     })

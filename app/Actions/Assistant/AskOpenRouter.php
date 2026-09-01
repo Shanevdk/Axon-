@@ -2,6 +2,7 @@
 
 namespace App\Actions\Assistant;
 
+use App\Concerns\AllowsTimeToAnswer;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -15,20 +16,22 @@ use RuntimeException;
  */
 class AskOpenRouter
 {
+    use AllowsTimeToAnswer;
+
     /**
      * The assistant's standing brief.
      *
-     * It knows what Axon is so drawing questions land somewhere useful, but it
+     * It knows what Vanhaven is so drawing questions land somewhere useful, but it
      * is explicitly free to answer anything — this is the general-questions
      * companion, not a support bot.
      */
     public const SYSTEM_PROMPT = <<<'PROMPT'
-        You are Axon's assistant, built into Axon — a browser-based architectural
+        You are Vanhaven's assistant, built into Vanhaven — a browser-based architectural
         drafting and modelling application in the mould of Revit, made by Van Haven.
 
         Answer whatever you are asked, on any subject. You are a general-purpose
         assistant first and a drafting companion second. When a question does touch
-        the software, remember that Axon models in millimetres internally and can
+        the software, remember that Vanhaven models in millimetres internally and can
         show either metric or imperial units, draws plans, elevations, sections and
         3D views, and exchanges DXF, STL, OBJ and STEP.
 
@@ -84,7 +87,9 @@ class AskOpenRouter
                 'HTTP-Referer' => config('app.url'),
                 'X-Title' => config('app.name'),
             ])
-            ->timeout((int) config('services.openrouter.timeout'))
+            ->timeout($this->allowSecondsToAnswer(
+                (int) config('services.openrouter.timeout'),
+            ))
             ->post($this->endpoint(), [
                 'model' => config('services.openrouter.model'),
                 'messages' => [

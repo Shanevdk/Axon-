@@ -52,6 +52,26 @@ return [
     ],
 
     /*
+    |----------------------------------------------------------------------
+    | Ground levels
+    |----------------------------------------------------------------------
+    |
+    | Where the height of the land comes from. Open-Meteo serves elevation
+    | free and without a key, reading a global 30m digital terrain model.
+    |
+    | Thirty metres between samples and a few metres of vertical error is a
+    | shape, not a survey: good enough to site a house on a slope and to
+    | draw ground on an elevation, nowhere near good enough to set a footing.
+    | `SITE_GROUND_LABEL` is written onto the drawing so nobody has to guess
+    | which of the two they are looking at.
+    */
+    'ground' => [
+        'url' => env('SITE_GROUND_URL', 'https://api.open-meteo.com/v1/elevation'),
+        'label' => env('SITE_GROUND_LABEL', 'Open-Meteo 30m terrain model'),
+        'timeout' => (int) env('SITE_GROUND_TIMEOUT', 20),
+    ],
+
+    /*
      * Claude Code on this machine, driven headlessly so the item designer's
      * terminal answers in the page.
      *
@@ -64,6 +84,12 @@ return [
         'binary' => env('CLAUDE_CODE_BINARY', 'claude'),
         'enabled' => env('CLAUDE_CODE_ENABLED'),
         'timeout' => (int) env('CLAUDE_CODE_TIMEOUT', 180),
+        /*
+         * The PHP that starts our MCP server for a sidebar turn. Left empty
+         * it is worked out, which is right nearly everywhere; set it when the
+         * CLI does not sit beside whatever is serving the app.
+         */
+        'php' => env('CLAUDE_CODE_PHP', ''),
     ],
 
     /*
@@ -87,6 +113,30 @@ return [
      * assistant can be told where a building is without anyone typing it.
      * Free and keyless, and only ever sent a rounded latitude and longitude.
      */
+    /*
+    |----------------------------------------------------------------------
+    | Finding a site
+    |----------------------------------------------------------------------
+    |
+    | Turning a typed address into a place on the earth, and drawing the map
+    | it is picked on. Both are OpenStreetMap and both are free and keyless.
+    |
+    | Nominatim asks for a User-Agent that identifies the application and no
+    | more than one request a second; answers are cached for a month, since
+    | an address does not move. The tile server asks for attribution, which
+    | the picker shows. A studio doing enough of either to be noticed should
+    | point these at its own provider rather than lean on the free ones.
+    */
+    'places' => [
+        'url' => env('PLACES_URL', 'https://nominatim.openstreetmap.org/search'),
+        'timeout' => (int) env('PLACES_TIMEOUT', 15),
+        'tiles' => env(
+            'MAP_TILES_URL',
+            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+        ),
+        'attribution' => env('MAP_ATTRIBUTION', '© OpenStreetMap contributors'),
+    ],
+
     'geocoder' => [
         'url' => env(
             'GEOCODER_URL',

@@ -110,12 +110,12 @@ class BuildStarterDocument
     private function wallTypes(): array
     {
         return [
-            ['id' => 'ext-brick', 'name' => 'Exterior - Brick on Stud', 'thickness' => 302, 'function' => 'exterior'],
-            ['id' => 'ext-concrete', 'name' => 'Exterior - 300 Concrete', 'thickness' => 300, 'function' => 'exterior'],
-            ['id' => 'generic-200', 'name' => 'Generic - 200mm', 'thickness' => 200, 'function' => 'interior'],
-            ['id' => 'int-partition', 'name' => 'Interior - 92mm Partition', 'thickness' => 92, 'function' => 'interior'],
-            ['id' => 'int-service', 'name' => 'Interior - 152mm Service', 'thickness' => 152, 'function' => 'interior'],
-            ['id' => 'curtain-storefront', 'name' => 'Curtain Wall - Storefront', 'thickness' => 150, 'function' => 'curtain'],
+            ['id' => 'ext-brick', 'name' => 'Exterior - Brick on Stud', 'thickness' => 302, 'function' => 'exterior', 'construction' => 'wood'],
+            ['id' => 'ext-concrete', 'name' => 'Exterior - 300 Concrete', 'thickness' => 300, 'function' => 'exterior', 'construction' => 'concrete'],
+            ['id' => 'generic-200', 'name' => 'Generic - 200mm', 'thickness' => 200, 'function' => 'interior', 'construction' => 'wood'],
+            ['id' => 'int-partition', 'name' => 'Interior - 92mm Partition', 'thickness' => 92, 'function' => 'interior', 'construction' => 'wood'],
+            ['id' => 'int-service', 'name' => 'Interior - 152mm Service', 'thickness' => 152, 'function' => 'interior', 'construction' => 'wood'],
+            ['id' => 'curtain-storefront', 'name' => 'Curtain Wall - Storefront', 'thickness' => 150, 'function' => 'curtain', 'construction' => 'glazed'],
         ];
     }
 

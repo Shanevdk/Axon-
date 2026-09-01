@@ -16,6 +16,7 @@ import {
 import type {
     CadDocument,
     CadElement,
+    Construction,
     DoorType,
     DuctSystem,
     ElementKind,
@@ -1161,6 +1162,135 @@ export function wallLayers(type: WallType): WallLayers {
     const core = type.thickness - finish * 2;
 
     return core <= 0 ? { finish: 0, core: type.thickness } : { finish, core };
+}
+
+/* ------------------------------------------------------------- materials */
+
+export const CONSTRUCTION_LABELS: Record<Construction, string> = {
+    wood: 'Wood framed',
+    steel: 'Steel',
+    concrete: 'Concrete',
+    masonry: 'Masonry',
+    glazed: 'Glazed',
+};
+
+/**
+ * Thickness at which a wall with nothing else to go on reads as concrete
+ * rather than framing. A stud wall gets no thicker than a 2x8 and its
+ * finishes; past that it is a wall someone poured.
+ */
+const CONCRETE_WALL_THICKNESS = 250;
+
+/**
+ * What the name of a wall type says it is built of, or null when the name
+ * keeps its own counsel.
+ *
+ * Framing is looked for first on purpose. The starter catalogue ships
+ * "Exterior - Brick on Stud" at 302mm — brick veneer hung on a timber wall,
+ * which is a stud wall to buy for even though it is thicker than most
+ * concrete. Reading the name beats measuring the thickness.
+ */
+function constructionFromName(name: string): Construction | null {
+    const text = name.toLowerCase();
+
+    if (/stud|frame|framed|timber|wood|joist/.test(text)) {
+        return 'wood';
+    }
+
+    if (/concrete|cast|cip|precast/.test(text)) {
+        return 'concrete';
+    }
+
+    if (/block|masonry|cmu|brick|stone/.test(text)) {
+        return 'masonry';
+    }
+
+    if (/steel|metal/.test(text)) {
+        return 'steel';
+    }
+
+    if (/curtain|glaz|glass|storefront/.test(text)) {
+        return 'glazed';
+    }
+
+    return null;
+}
+
+/**
+ * What a wall type is built of.
+ *
+ * Its own answer wins. Failing that a curtain wall is glass, the name is
+ * read for what it says, and only then does thickness decide — which is the
+ * weakest evidence and so comes last.
+ */
+export function wallConstruction(type: WallType): Construction {
+    if (type.construction !== undefined) {
+        return type.construction;
+    }
+
+    if (type.function === 'curtain') {
+        return 'glazed';
+    }
+
+    return (
+        constructionFromName(type.name) ??
+        (type.thickness >= CONCRETE_WALL_THICKNESS ? 'concrete' : 'wood')
+    );
+}
+
+/**
+ * The deepest a floor can be and still be a slab.
+ *
+ * Nothing this thin can be joisted — the shallowest joist plus its subfloor
+ * is already deeper — so a floor at or under it is poured, and anything
+ * above it is framed. Real foundations are drawn as pads and footings,
+ * which are concrete by definition and never come through here.
+ */
+const SLAB_FLOOR_THICKNESS = 150;
+
+/** Section depth past which an unlabelled beam reads as steel. */
+const STEEL_BEAM_DEPTH = 400;
+
+/**
+ * What one element is built of.
+ *
+ * The element's own `construction` wins, so a single timber post inside a
+ * concrete frame is one field away. Failing that a wall follows its type,
+ * and everything else follows what it is: footings and pads are poured by
+ * definition, glazing is glass, and the rest of the carpentry is wood.
+ */
+export function constructionOf(
+    document: CadDocument,
+    element: CadElement,
+): Construction {
+    if (element.construction !== undefined) {
+        return element.construction;
+    }
+
+    switch (element.kind) {
+        case 'wall':
+            return wallConstruction(wallTypeOf(document, element.typeId));
+        case 'footing':
+        case 'pad':
+            return 'concrete';
+        case 'floor':
+            return element.thickness <= SLAB_FLOOR_THICKNESS
+                ? 'concrete'
+                : 'wood';
+        case 'column':
+            // A 400mm post is a column someone poured, not a 4x4.
+            return element.size >= CONCRETE_WALL_THICKNESS
+                ? 'concrete'
+                : 'wood';
+        case 'beam':
+            return element.depth >= STEEL_BEAM_DEPTH ? 'steel' : 'wood';
+        case 'brace':
+            return 'steel';
+        case 'window':
+            return 'glazed';
+        default:
+            return 'wood';
+    }
 }
 
 /**
